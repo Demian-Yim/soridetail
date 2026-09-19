@@ -6,148 +6,178 @@
 <meta name="theme-color" content="#0B0B0B">
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/hv.css">
 <title>헤이 비전 — 눈앞을 말해주는 AI 안내</title>
 <style>
-  [hidden]{ display:none !important; }  /* display:flex 같은 규칙이 hidden 속성을 이기지 못하게 */
-  :root{
-    --bg:#0B0B0B; --surface:#141414; --border:#2A2A2A; --fg:#E8E8E8; --fg-dim:#B8B8B8;
-    --accent:#FFD400; --accent-ink:#0B0B0B; --ok:#7CFFB2; --focus:#00E5FF;
-    --radius:22px;
-  }
-  *{ box-sizing:border-box; }
-  html,body{ margin:0; }
-  body{
-    background:var(--bg); color:var(--fg); font-size:18px; line-height:1.5;
-    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
-    overflow-x:hidden; min-height:100vh; padding-bottom:env(safe-area-inset-bottom,0px);
-  }
-  .skip{ position:absolute; left:-9999px; top:0; }
-  .skip:focus{ left:12px; top:12px; background:#000; color:var(--focus); padding:12px; z-index:200; border-radius:8px; }
-  :focus-visible{ outline:4px solid var(--focus); outline-offset:3px; }
-  button{ font-family:inherit; cursor:pointer; }
-  svg{ display:block; }
+  body{ min-height:100vh; padding-bottom:env(safe-area-inset-bottom,0px); }
+  body[data-ui="voice"]{ background:var(--hv-a-bg); color:var(--hv-a-fg); }
+  body[data-ui="visual"]{ background:#FFFFFF; color:var(--hv-body); }
+  body[data-ui="voice"] #visualScreen{ display:none; }
+  body[data-ui="visual"] #voiceScreen{ display:none; }
 
-  /* ---- Top bar (shared) ---- */
+  /* ---- 공통 상단 ---- */
   .topbar{
     display:flex; align-items:center; justify-content:space-between; gap:12px;
-    padding:calc(14px + env(safe-area-inset-top,0px)) 16px 14px;
-    border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--bg); z-index:40;
+    padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;
+    position:sticky; top:0; z-index:40;
   }
-  .brand{ color:var(--fg); text-decoration:none; font-weight:800; font-size:20px; }
-  #uiSwitchBtn{
-    background:var(--surface); color:var(--fg); border:1px solid var(--border);
-    border-radius:999px; padding:10px 16px; font-size:14px; font-weight:700; min-height:48px;
-  }
+  body[data-ui="voice"] .topbar{ background:var(--hv-a-bg); border-bottom:1px solid var(--hv-a-border); }
+  body[data-ui="visual"] .topbar{ background:rgba(255,255,255,.96); border-bottom:1px solid var(--hv-line); }
+  .brand{ display:inline-flex; align-items:center; gap:8px; font-weight:800; font-size:20px; text-decoration:none; }
+  body[data-ui="voice"] .brand{ color:var(--hv-a-fg); }
+  body[data-ui="visual"] .brand{ color:var(--hv-ink); }
+  body[data-ui="visual"] .brand .hv-ic{ color:var(--hv-blue); }
+  #uiSwitchBtn{ border-radius:var(--hv-r-pill); padding:10px 16px; font-size:14px; font-weight:700; min-height:48px; }
+  body[data-ui="voice"] #uiSwitchBtn{ background:transparent; color:var(--hv-a-dim); border:2px solid var(--hv-a-border); }
+  body[data-ui="visual"] #uiSwitchBtn{ background:#fff; color:var(--hv-navy); border:2px solid var(--hv-line-strong); }
 
-  /* ================= VOICE MODE ================= */
-  body[data-ui="voice"] #visualScreen{ display:none; }
-  #voiceScreen{ padding:16px; max-width:640px; margin:0 auto; font-size:22px; }
-  #voiceScreen .lead{ font-size:22px; color:var(--fg-dim); text-align:center; margin:0 0 18px; }
-  #voiceScreen .lead a{ color:var(--accent); }
+  /* ================= 소리 모드 (접근성 얼굴) ================= */
+  #voiceScreen{ padding:16px; max-width:640px; margin:0 auto; }
+  #voiceScreen .lead{ font-size:19px; color:var(--hv-a-dim); text-align:center; margin:0 0 14px; }
+  #voiceScreen .lead a{ color:var(--hv-a-accent); }
   #voiceCallout{
-    font-size:28px; font-weight:800; line-height:1.4; min-height:3.4em;
-    text-align:center; padding:0 6px 16px; color:var(--fg);
+    font-size:27px; font-weight:800; line-height:1.4; min-height:3.2em;
+    text-align:center; padding:0 6px 10px; color:var(--hv-a-fg);
   }
-  #voiceStatus{ text-align:center; font-size:22px; color:var(--ok); min-height:1.3em; margin-bottom:8px; }
+  #voiceStatus{ text-align:center; font-size:20px; color:var(--hv-a-ok); min-height:1.3em; margin-bottom:10px; }
   #voiceMainBtn{
-    display:block; width:100%; min-height:min(44vh, 420px); border-radius:28px; border:none;
-    background:var(--accent); color:var(--accent-ink); font-size:34px; font-weight:900;
-    box-shadow:0 8px 0 #b89600;
+    display:block; width:100%; min-height:min(38vh,340px); border-radius:28px; border:none;
+    background:var(--hv-a-accent); color:var(--hv-a-accent-ink); font-size:33px; font-weight:800;
+    box-shadow:0 8px 0 #B89600;
   }
-  #voiceMainBtn:active{ transform:translateY(4px); box-shadow:0 4px 0 #b89600; }
-  #voiceMainBtn[aria-busy="true"]{ background:#3a3200; color:var(--accent); box-shadow:0 8px 0 #1c1800; }
-  .voice-row2{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }
+  #voiceMainBtn:active{ transform:translateY(4px); box-shadow:0 4px 0 #B89600; }
+  #voiceMainBtn[aria-busy="true"]{ background:#3A3200; color:var(--hv-a-accent); box-shadow:0 8px 0 #1C1800; }
+  .voice-row2{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
   .voice-row2 button{
-    min-height:88px; border-radius:18px; border:2px solid var(--accent); background:transparent;
-    color:var(--accent); font-size:22px; font-weight:800;
+    min-height:88px; border-radius:18px; border:3px solid var(--hv-a-accent);
+    background:transparent; color:var(--hv-a-accent); font-size:21px; font-weight:800;
   }
-  .voice-row2 button[aria-pressed="true"]{ background:var(--accent); color:var(--accent-ink); }
-  .voice-foot{ display:flex; justify-content:center; align-items:center; gap:16px; margin-top:16px; flex-wrap:wrap; position:relative; }
+  .voice-row2 button[aria-pressed="true"]{ background:var(--hv-a-accent); color:var(--hv-a-accent-ink); }
+  .voice-row2 button:disabled{ opacity:.45; border-color:var(--hv-a-border); color:var(--hv-a-dim); }
+  .voice-foot{ display:flex; justify-content:center; align-items:center; gap:12px; margin-top:14px; flex-wrap:wrap; position:relative; }
   .voice-foot button, .voice-foot summary{
-    background:none; border:none; color:var(--fg-dim); font-size:16px; padding:10px 8px; min-height:48px;
+    background:transparent; border:2px solid var(--hv-a-border); color:var(--hv-a-dim);
+    font-size:16px; font-weight:700; padding:10px 16px; min-height:48px; border-radius:var(--hv-r-pill);
   }
-  .voice-foot summary{ cursor:pointer; list-style:none; }
+  .voice-foot summary{ cursor:pointer; list-style:none; display:inline-flex; align-items:center; }
   .voice-foot summary::-webkit-details-marker{ display:none; }
-  #voiceSettings{ position:relative; }
-  #voiceSettings[open] summary{ color:var(--accent); }
+  #voiceSettings[open] summary{ color:var(--hv-a-accent); border-color:var(--hv-a-accent); }
   .voice-settings-panel{
-    position:absolute; bottom:56px; left:50%; transform:translateX(-50%);
-    background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:14px 18px;
-    width:min(300px,86vw); z-index:60;
+    position:absolute; bottom:60px; left:50%; transform:translateX(-50%);
+    background:var(--hv-a-surface); border:1px solid var(--hv-a-border); border-radius:18px; padding:16px 18px;
+    width:min(340px,92vw); z-index:60; text-align:left;
   }
-  .voice-settings-panel label{ display:flex; align-items:center; gap:10px; padding:9px 0; font-size:16px; }
-  .voice-settings-panel input{ width:22px; height:22px; accent-color:var(--accent); }
-  .voice-settings-panel fieldset{ border:none; padding:0; margin:0; }
-  .voice-settings-panel legend{ font-size:14px; color:var(--fg-dim); margin-bottom:4px; }
-
-  /* ================= VISUAL MODE ================= */
-  body[data-ui="visual"] #voiceScreen{ display:none; }
-  #visualScreen{ max-width:1200px; margin:0 auto; padding:16px; }
-  .v-strap{ color:var(--fg-dim); font-size:14px; margin:0 0 16px; }
+  .voice-settings-panel label{ display:flex; align-items:center; gap:10px; padding:10px 0; font-size:17px; color:var(--hv-a-fg); }
+  .voice-settings-panel input{ width:24px; height:24px; accent-color:var(--hv-a-accent); }
+  .voice-settings-panel fieldset{ border:none; padding:0; margin:0 0 6px; }
+  .voice-settings-panel legend{ font-size:14px; color:var(--hv-a-dim); margin-bottom:2px; font-weight:700; }
+</style>
+<style>
+  /* ================= 보기 모드 (문서 얼굴) ================= */
+  #visualScreen{ max-width:1200px; margin:0 auto; padding:16px 20px 48px; }
+  .v-strap{ color:var(--hv-mute); font-size:14px; margin:0 0 16px; }
   .v-layout{ display:block; }
-  @media (min-width:900px){ .v-layout{ display:grid; grid-template-columns:60% 40%; gap:24px; align-items:start; } }
+  @media (min-width:960px){ .v-layout{ display:grid; grid-template-columns:62% 1fr; gap:28px; align-items:start; } }
 
   .v-stage{
-    position:relative; border-radius:var(--radius); overflow:hidden; background:var(--surface);
-    border:1px solid var(--border); height:46vh; min-height:260px;
+    position:relative; border-radius:var(--hv-r-xl); overflow:hidden;
+    background:#0B0B0B; border:1px solid var(--hv-line); box-shadow:var(--hv-sh-2);
+    height:46vh; min-height:280px;
   }
-  @media (min-width:900px){ .v-stage{ height:60vh; } }
-  #video{ width:100%; height:100%; object-fit:cover; background:#000; display:block; }
+  @media (min-width:960px){ .v-stage{ height:58vh; } }
+  #video{ width:100%; height:100%; object-fit:cover; background:#0B0B0B; display:block; }
   .v-cta-wrap{
-    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px;
+    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;
+    background:var(--hv-soft); text-align:center; padding:24px;
   }
-  .v-cta-wrap svg{ width:64px; height:64px; color:var(--fg-dim); }
+  .v-cta-wrap .hv-ic{ color:var(--hv-line-strong); }
+  .v-cta-wrap .v-empty-t{ font-size:18px; font-weight:800; color:var(--hv-ink); }
+  .v-cta-wrap .v-empty-s{ font-size:14px; color:var(--hv-mute); max-width:34ch; }
   #visualCameraCta{
-    background:var(--accent); color:var(--accent-ink); border:none; border-radius:16px;
-    padding:16px 28px; font-size:18px; font-weight:800; min-height:56px;
+    background:var(--hv-navy); color:#fff; border:none; border-radius:var(--hv-r-md);
+    padding:0 28px; font-size:17px; font-weight:800; min-height:56px; margin-top:4px;
   }
   #visualCallout{
-    position:absolute; left:0; right:0; bottom:0; padding:16px 18px; min-height:1.6em;
-    background:linear-gradient(to top, rgba(0,0,0,.88), rgba(0,0,0,.55) 70%, transparent);
-    color:#fff; font-size:23px; font-weight:700; line-height:1.4; border-left:6px solid var(--accent);
+    position:absolute; left:0; right:0; bottom:0; padding:18px 20px; min-height:1.6em; z-index:2;
+    background:linear-gradient(to top, rgba(0,0,0,.92), rgba(0,0,0,.62) 70%, transparent);
+    color:#fff; font-size:22px; font-weight:800; line-height:1.4; border-left:8px solid var(--hv-a-accent);
   }
-  #visualCallout[aria-busy="true"]{ border-left-color:var(--ok); }
+  #visualCallout[aria-busy="true"]{ border-left-color:var(--hv-a-ok); }
 
-  .v-chips{ display:flex; flex-wrap:wrap; gap:8px; margin:16px 0; }
+  .v-chips{ display:flex; flex-wrap:wrap; gap:8px; margin:18px 0 14px; }
   .mode-chip{
-    background:var(--surface); border:1px solid var(--border); color:var(--fg);
-    border-radius:999px; padding:10px 16px; font-size:14px; font-weight:700; min-height:48px;
+    display:inline-flex; align-items:center; gap:7px;
+    background:#fff; border:2px solid var(--hv-line); color:var(--hv-body);
+    border-radius:var(--hv-r-pill); padding:10px 16px; font-size:14px; font-weight:700; min-height:48px;
   }
-  .mode-chip[aria-pressed="true"]{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .mode-chip .hv-ic{ color:var(--hv-blue); }
+  .mode-chip[aria-pressed="true"]{ background:var(--hv-navy); color:#fff; border-color:var(--hv-navy); }
+  .mode-chip[aria-pressed="true"] .hv-ic{ color:var(--hv-a-accent); }
   @media (max-width:520px){ .v-chips{ display:grid; grid-template-columns:1fr 1fr; } }
 
-  .v-actions{ display:flex; gap:16px; margin-bottom:16px; }
+  .v-actions{ display:flex; gap:12px; margin-bottom:14px; }
   #visualNowBtn{
-    flex:1 1 auto; background:var(--accent); color:var(--accent-ink); border:none; border-radius:16px;
-    min-height:72px; font-size:20px; font-weight:900;
+    flex:1 1 auto; background:var(--hv-navy); color:#fff; border:none; border-radius:var(--hv-r-md);
+    min-height:72px; font-size:20px; font-weight:800;
   }
+  #visualNowBtn[aria-busy="true"]{ background:#0F1F3A; color:#CFE0FA; }
   #visualMicBtn{
-    flex:0 0 auto; background:transparent; border:1px solid var(--border); color:var(--fg);
-    border-radius:16px; min-height:72px; padding:0 20px; font-size:16px; font-weight:700;
+    flex:0 0 auto; background:#fff; border:2px solid var(--hv-line-strong); color:var(--hv-navy);
+    border-radius:var(--hv-r-md); min-height:72px; padding:0 22px; font-size:16px; font-weight:800;
   }
-  .v-card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:16px; }
-  .v-card h2, .v-card summary{ margin:0 0 10px; font-size:15px; color:var(--fg-dim); font-weight:700; }
-  #visualStatus{ font-size:14px; color:var(--fg-dim); min-height:1.3em; }
-  #visualHistory{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; max-height:220px; overflow:auto; }
-  #visualHistory li{ font-size:14px; border-left:3px solid var(--border); padding-left:10px; }
-  #visualHistory li .h-time{ color:var(--fg-dim); margin-right:6px; }
-  #visualHistory li .h-mode{ color:var(--ok); margin-right:6px; }
-  #visualDetails{ margin:8px 0 0; }
-  #visualDetails dt{ color:var(--fg-dim); font-size:13px; margin-top:8px; }
-  #visualDetails dd{ margin:0 0 4px; font-size:14px; }
-  .v-foot{ display:flex; gap:8px; flex-wrap:wrap; }
+  #visualMicBtn[aria-pressed="true"]{ background:var(--hv-soft-blue); border-color:var(--hv-blue); }
+  .v-card{ background:#fff; border:1px solid var(--hv-line); border-radius:var(--hv-r-lg); padding:18px; margin-bottom:16px; box-shadow:var(--hv-sh-1); }
+  .v-card h2, .v-card summary{ margin:0 0 10px; font-size:14px; font-weight:800; color:var(--hv-mute); letter-spacing:.04em; text-transform:uppercase; }
+  .v-card summary{ cursor:pointer; min-height:28px; }
+  #visualStatus{ font-size:15px; color:var(--hv-navy); min-height:1.4em; font-weight:700; }
+  #visualHistory{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; max-height:240px; overflow:auto; }
+  #visualHistory:empty::after{ content:"아직 안내가 없습니다."; font-size:14px; color:var(--hv-mute); }
+  #visualHistory li{
+    font-size:15px; color:var(--hv-ink); background:var(--hv-soft-blue);
+    border-left:4px solid var(--hv-blue); border-radius:0 var(--hv-r-sm) var(--hv-r-sm) 0; padding:10px 12px;
+  }
+  #visualHistory li .h-time{ color:var(--hv-mute); margin-right:8px; font-size:12px; font-weight:700; }
+  #visualHistory li .h-mode{ color:var(--hv-blue); margin-right:8px; font-size:12px; font-weight:800; }
+  #visualDetails{ margin:8px 0 0; display:grid; grid-template-columns:auto 1fr; gap:4px 14px; }
+  #visualDetails dt{ color:var(--hv-mute); font-size:13px; }
+  #visualDetails dd{ margin:0; font-size:13px; color:var(--hv-ink); font-weight:700; }
+  .v-foot{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
   .v-foot button{
-    background:transparent; border:1px solid var(--border); color:var(--fg-dim);
-    border-radius:12px; min-height:48px; padding:0 16px; font-size:14px;
+    background:#fff; border:2px solid var(--hv-line); color:var(--hv-mute);
+    border-radius:var(--hv-r-pill); min-height:48px; padding:0 18px; font-size:14px; font-weight:700;
   }
+  .v-foot button:disabled{ opacity:.5; }
+  .v-note{ font-size:13px; color:var(--hv-mute); }
 
-  @media (prefers-reduced-motion:reduce){ *{ transition:none !important; animation:none !important; } }
+  /* 첫 방문 온보딩 */
+  #vOnboard{ position:fixed; inset:0; z-index:120; background:rgba(11,11,11,.62); display:flex; align-items:center; justify-content:center; padding:20px; }
+  .ob-card{ background:#fff; border-radius:var(--hv-r-xl); padding:28px 24px; max-width:420px; width:100%; box-shadow:var(--hv-sh-2); }
+  .ob-card h2{ font-size:22px; font-weight:800; color:var(--hv-ink); margin-bottom:10px; }
+  .ob-card p{ font-size:16px; color:var(--hv-body); }
+  .ob-dots{ display:flex; gap:7px; margin:18px 0; }
+  .ob-dots span{ width:9px; height:9px; border-radius:50%; background:var(--hv-line-strong); }
+  .ob-dots span[data-on="1"]{ background:var(--hv-navy); width:26px; border-radius:6px; }
+  .ob-row{ display:flex; gap:10px; justify-content:space-between; align-items:center; }
 </style>
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="헤이 비전">
 </head>
 <body data-ui="voice">
-<a class="skip" href="#voiceMainBtn">지금 알려줘로 바로가기</a>
+<a class="hv-skip" href="#voiceMainBtn">지금 알려줘로 바로가기</a>
+
+<svg class="hv-sr-only" aria-hidden="true" focusable="false"><defs>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.35-4.35"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h5v18H6a2 2 0 0 1-2-2V5Z"/><path d="M20 5a2 2 0 0 0-2-2h-5v18h5a2 2 0 0 0 2-2V5Z"/></symbol>
+  <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></symbol>
+  <symbol id="i-mirror" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M8 17c0-2 2-3 4-3s4 1 4 3"/></symbol>
+  <symbol id="i-loop" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3M20 4v5h-5"/><path d="M20 12a8 8 0 0 1-14 5.3M4 20v-5h5"/></symbol>
+  <symbol id="i-cam" viewBox="0 0 24 24"><path d="M4 8a2 2 0 0 1 2-2h1.2a1 1 0 0 0 .9-.55l.8-1.6A1 1 0 0 1 9.8 3h4.4a1 1 0 0 1 .9.55l.8 1.6a1 1 0 0 0 .9.55H18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+</defs></svg>
+
 <header class="topbar">
-  <a class="brand" href="/">헤이 비전</a>
+  <a class="brand" href="/"><svg class="hv-ic hv-ic-md" aria-hidden="true"><use href="#i-eye"></use></svg>헤이 비전</a>
   <button type="button" id="uiSwitchBtn">화면 방식 바꾸기</button>
 </header>
 
@@ -172,34 +202,37 @@
           <label><input type="radio" name="voiceMode" id="voiceRadioNatural" value="natural" checked> 자연 음성으로 듣기</label>
           <label><input type="radio" name="voiceMode" id="voiceRadioScreenreader" value="screenreader"> 스크린리더에 맡기기</label>
         </fieldset>
+        <fieldset>
+          <legend>목소리와 속도</legend>
+          <div id="voicePicker"></div>
+        </fieldset>
       </div>
     </details>
   </div>
 </div>
 
 <div id="visualScreen">
-  <p class="v-strap">눈앞을 말해주는 AI 안내 · 동행인·가족과 함께 보기 좋은 화면입니다</p>
+  <p class="v-strap">눈앞을 말해주는 AI 안내 &middot; 동행인·가족과 함께 보기 좋은 화면입니다</p>
   <div class="v-layout">
     <div class="v-left">
       <div class="v-stage">
         <video id="video" autoplay playsinline muted aria-hidden="true" tabindex="-1"></video>
         <div class="v-cta-wrap" id="visualCtaWrap">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M4 8a2 2 0 0 1 2-2h1.2a1 1 0 0 0 .9-.55l.8-1.6A1 1 0 0 1 9.8 3h4.4a1 1 0 0 1 .9.55l.8 1.6a1 1 0 0 0 .9.55H18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z"/>
-            <circle cx="12" cy="13" r="3.5"/>
-          </svg>
+          <svg class="hv-ic hv-ic-xl" aria-hidden="true"><use href="#i-cam"></use></svg>
+          <span class="v-empty-t">카메라를 켜면 안내가 시작됩니다</span>
+          <span class="v-empty-s">이 세션 전용 격리 컴퓨터를 만들고, 끝내면 사진과 함께 지웁니다.</span>
           <button type="button" id="visualCameraCta">카메라 켜기</button>
         </div>
         <div id="visualCallout" role="status" aria-live="off">카메라를 켜면 안내가 시작됩니다.</div>
       </div>
 
       <div class="v-chips" role="group" aria-label="안내 방식">
-        <button type="button" class="mode-chip" data-mode="look" aria-pressed="true">둘러보기</button>
-        <button type="button" class="mode-chip" data-mode="find" aria-pressed="false">찾기</button>
-        <button type="button" class="mode-chip" data-mode="read" aria-pressed="false">읽기</button>
-        <button type="button" class="mode-chip" data-mode="people" aria-pressed="false">사람</button>
-        <button type="button" class="mode-chip" data-mode="self" aria-pressed="false">내 모습</button>
-        <button type="button" class="mode-chip" data-mode="watch" aria-pressed="false">계속 보기</button>
+        <button type="button" class="mode-chip" data-mode="look" aria-pressed="true"><svg class="hv-ic hv-ic-sm" aria-hidden="true"><use href="#i-eye"></use></svg>둘러보기</button>
+        <button type="button" class="mode-chip" data-mode="find" aria-pressed="false"><svg class="hv-ic hv-ic-sm" aria-hidden="true"><use href="#i-search"></use></svg>찾기</button>
+        <button type="button" class="mode-chip" data-mode="read" aria-pressed="false"><svg class="hv-ic hv-ic-sm" aria-hidden="true"><use href="#i-book"></use></svg>읽기</button>
+        <button type="button" class="mode-chip" data-mode="people" aria-pressed="false"><svg class="hv-ic hv-ic-sm" aria-hidden="true"><use href="#i-person"></use></svg>사람</button>
+        <button type="button" class="mode-chip" data-mode="self" aria-pressed="false"><svg class="hv-ic hv-ic-sm" aria-hidden="true"><use href="#i-mirror"></use></svg>내 모습</button>
+        <button type="button" class="mode-chip" data-mode="watch" aria-pressed="false"><svg class="hv-ic hv-ic-sm" aria-hidden="true"><use href="#i-loop"></use></svg>계속 보기</button>
       </div>
 
       <div class="v-actions">
@@ -211,6 +244,7 @@
         <button type="button" id="visualEndBtn" disabled>끝내기</button>
         <button type="button" id="visualStopBtn">음성 멈춤</button>
       </div>
+      <p class="v-note">답까지 약 4초가 걸립니다. 걸으며 쓰는 도구가 아니라 멈춰 서서 파악하는 도구입니다.</p>
     </div>
 
     <div class="v-right">
@@ -218,6 +252,10 @@
         <h2>안내 기록</h2>
         <ul id="visualHistory"></ul>
         <div id="visualStatus" aria-live="off"></div>
+      </div>
+      <div class="v-card">
+        <h2>목소리와 속도</h2>
+        <div id="voicePickerVisual"></div>
       </div>
       <details class="v-card">
         <summary>안에서 일어나는 일</summary>
@@ -227,6 +265,18 @@
   </div>
 </div>
 </main>
+
+<div id="vOnboard" hidden role="dialog" aria-modal="true" aria-labelledby="obTitle">
+  <div class="ob-card">
+    <h2 class="ob-card-h" id="obTitle">1. 카메라를 켭니다</h2>
+    <p id="obBody">보고 싶은 방향으로 휴대폰 뒷면 카메라를 향하게 두세요. 화면이 아니라 카메라가 보는 쪽이 기준입니다.</p>
+    <div class="ob-dots" aria-hidden="true"><span data-on="1"></span><span></span><span></span></div>
+    <div class="ob-row">
+      <button type="button" class="hv-btn hv-btn-ghost" id="obSkip">건너뛰기</button>
+      <button type="button" class="hv-btn hv-btn-primary" id="obNext">다음</button>
+    </div>
+  </div>
+</div>
 
 <canvas id="canvas" hidden></canvas>
 
@@ -315,8 +365,29 @@ for (const radio of document.querySelectorAll('input[name="voiceMode"]')) {
   if (el) el.checked = true;
 })();
 
+// 카메라가 안 열릴 때 영어 오류 원문 대신, 무엇을 하면 되는지 우리말로 알려 준다
+const CAMERA_HELP = {
+  NotAllowedError: "카메라 사용이 허용되지 않았습니다. 브라우저 설정에서 이 사이트의 카메라를 허용한 뒤 다시 눌러 주세요.",
+  NotFoundError: "카메라를 찾지 못했습니다. 다른 앱이 카메라를 쓰고 있지 않은지 확인하고 다시 눌러 주세요.",
+  NotReadableError: "카메라가 다른 곳에서 쓰이고 있습니다. 영상 통화나 카메라 앱을 닫고 다시 눌러 주세요.",
+  OverconstrainedError: "이 기기의 카메라로는 열 수 없었습니다. 다시 눌러 주세요.",
+  SecurityError: "보안 연결이 아니어서 카메라를 열 수 없습니다. 주소가 에이치티티피에스로 시작하는지 확인해 주세요.",
+};
+const cameraHelp = (err) => CAMERA_HELP[err && err.name] || "카메라를 켜지 못했습니다. 잠시 뒤 다시 눌러 주세요.";
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function requestCamera(facing) {
+  const wanted = { video: { facingMode: { ideal: facing }, width: { ideal: 1280 } }, audio: false };
+  try { return await navigator.mediaDevices.getUserMedia(wanted); }
+  catch (err) {
+    if (err.name === "NotAllowedError" || err.name === "SecurityError") throw err;  // 다시 해도 같은 결과
+    await pause(600);  // 방금 끈 카메라가 아직 풀리지 않았을 수 있다 — 조건을 풀어 한 번 더
+    return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  }
+}
+
 async function openCamera(facing) {
-  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 1280 } }, audio: false });
+  const stream = await requestCamera(facing);
   for (const track of ($("video").srcObject?.getTracks() || [])) track.stop();
   $("video").srcObject = stream;
   currentFacing = facing;
@@ -343,6 +414,7 @@ function renderState() {
   $("visualCtaWrap").hidden = started;  // 아이콘까지 통째로 치워야 켜진 카메라 화면이 보인다
   $("visualNowBtn").hidden = !started;
   $("visualMicBtn").hidden = !started;
+  $("visualNowBtn").textContent = busy ? "보는 중" : "지금 알려줘";
   $("visualNowBtn").setAttribute("aria-busy", String(busy));
   $("visualCallout").setAttribute("aria-busy", String(busy));
   $("visualEndBtn").disabled = !started;
@@ -351,7 +423,9 @@ function renderState() {
 }
 
 async function doStart() {
-  if (started || starting) return;
+  if (started) return;
+  // 준비하는 몇 초 동안 다시 누르면 조용히 무시하지 않는다 — 화면을 못 보는 사용자에게 무반응은 고장과 같다
+  if (starting) { vibrate(30); speak("준비하고 있습니다. 잠시만 기다려 주세요."); return; }
   starting = true;
   try {
     setStatus("카메라를 켜고 있습니다.", true);
@@ -362,6 +436,7 @@ async function doStart() {
     setDetail("샌드박스", s.where === "daytona" ? "Daytona " + sessionId.slice(0, 8) + " · " + s.seconds + "초" : "로컬 점검 모드");
     started = true;
     renderState();
+    setStatus("");  // 준비가 끝났으면 '준비하고 있습니다'를 지운다
     const startMsg = document.body.dataset.ui === "voice"
       ? "준비되었습니다. 화면 가운데 큰 버튼이 지금 알려줘입니다. 그 아래 왼쪽이 말로 요청, 오른쪽이 방식 바꾸기입니다."
       : "카메라가 켜졌습니다. 지금 알려줘를 눌러 안내를 받아보세요.";
@@ -369,7 +444,9 @@ async function doStart() {
     if (mode === "watch") startWatch();
     requestWakeLock();
   } catch (err) {
-    setCallout("카메라를 켜지 못했습니다. " + err.message);
+    setStatus("");  // '켜고 있습니다'를 남겨 두면 멈춘 것처럼 보인다
+    vibrate(200);
+    setCallout(err && err.name && CAMERA_HELP[err.name] ? cameraHelp(err) : "시작하지 못했습니다. " + (err.message || "") + " 다시 눌러 주세요.");
   } finally {
     starting = false;
   }
@@ -403,7 +480,7 @@ async function doNow(requestMode, question = "") {
     setDetail("변화량", String(q.change ?? "첫 장면"));
     setDetail("응답 시간", (ms / 1000).toFixed(1) + "초");
     if (r.silent || !r.callout) {
-      setStatus(requestMode === "watch" ? "변화 없음 — 말하지 않습니다." : "말할 것이 없습니다.");
+      setStatus(requestMode === "watch" ? "달라진 게 없어 말하지 않았습니다." : "말할 것이 없습니다.");
     } else {
       lastCallout = r.callout; setStatus(""); setCallout(r.callout);
     }
@@ -479,6 +556,49 @@ function applyUiMode(next, announce) {
   if (announce) setStatus(next === "voice" ? "소리 모드로 바뀌었습니다." : "보기 모드로 바뀌었습니다.", true);
 }
 $("uiSwitchBtn").onclick = () => applyUiMode(document.body.dataset.ui === "voice" ? "visual" : "voice", true);
+
+// 목소리 고르개 — voice.js 가 컨테이너 안을 직접 그린다 (없으면 조용히 건너뛴다)
+(() => {
+  const api = (typeof Voice !== "undefined") ? Voice : window.Voice;
+  if (!api || !api.mountPicker) return;
+  for (const id of ["voicePicker", "voicePickerVisual"]) {
+    const box = $(id);
+    if (box) api.mountPicker(box);
+  }
+})();
+
+// 보기 모드 첫 방문 온보딩 (건너뛰기 가능 · 한 번만)
+const ONBOARD_KEY = "heyvision-onboarded";
+const OB_STEPS = [
+  ["1. 카메라를 켭니다", "보고 싶은 방향으로 휴대폰 뒷면 카메라를 향하게 두세요. 화면이 아니라 카메라가 보는 쪽이 기준입니다."],
+  ["2. 방식을 고릅니다", "둘러보기·찾기·읽기·사람·내 모습·계속 보기 중에서 지금 필요한 것을 누르세요. 기본은 둘러보기입니다."],
+  ["3. 지금 알려줘를 누릅니다", "약 4초 뒤 한두 문장으로 안내가 나옵니다. 달라진 게 없으면 말하지 않습니다."]
+];
+(() => {
+  let step = 0;
+  const box = $("vOnboard");
+  if (!box) return;
+  const close = () => {
+    box.hidden = true;
+    try { localStorage.setItem(ONBOARD_KEY, "1"); } catch (e) {}
+  };
+  const draw = () => {
+    $("obTitle").textContent = OB_STEPS[step][0];
+    $("obBody").textContent = OB_STEPS[step][1];
+    const dots = box.querySelectorAll(".ob-dots span");
+    dots.forEach((d, i) => { if (i === step) d.setAttribute("data-on", "1"); else d.removeAttribute("data-on"); });
+    $("obNext").textContent = step === OB_STEPS.length - 1 ? "시작하기" : "다음";
+  };
+  $("obSkip").onclick = close;
+  $("obNext").onclick = () => { if (step === OB_STEPS.length - 1) { close(); return; } step += 1; draw(); };
+  let seen = "1";
+  try { seen = localStorage.getItem(ONBOARD_KEY); } catch (e) {}
+  // applyUiMode 보다 먼저 도는 자리라 시작 모드를 여기서 같은 규칙으로 한 번 더 계산한다
+  const q0 = new URLSearchParams(location.search).get("ui");
+  let willBe = "voice";
+  try { willBe = (q0 === "voice" || q0 === "visual") ? q0 : (localStorage.getItem(UI_KEY) || "voice"); } catch (e) {}
+  if (!seen && willBe === "visual") { draw(); box.hidden = false; }
+})();
 
 (() => {
   const params = new URLSearchParams(location.search);

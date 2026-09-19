@@ -1,0 +1,307 @@
+/* 헤이 비전 — 공용 디자인 토큰 · 컴포넌트 (hv.css)
+   랜딩(/)과 앱(/eye)이 함께 쓴다. 외부 리소스 0 — 폰트는 시스템 스택.
+   두 얼굴을 한 시스템으로 다룬다.
+   1) .hv-doc  = 도입 검토자(가족·복지관·특수학교·지자체·기업)가 보는 화면.
+      DGRS 토큰: 화이트 기조 · 잉크 #111 · 본문 #3A3A3A · 네이비/블루 강조.
+   2) .hv-a11y = 시각장애인·저시력 당사자가 쓰는 화면.
+      기능적 최대 대비: 검정 #0B0B0B · 흰 글자 · 노랑 #FFD400.
+      브랜드 장식이 아니라 접근성 요구다. 색을 바꾸지 않는다.
+   두 얼굴은 색만 다르고 간격·타이포 위계·컴포넌트 구조는 같은 시스템을 쓴다. */
+
+:root{
+  --hv-white:#FFFFFF;
+  --hv-ink:#111111;
+  --hv-body:#3A3A3A;
+  --hv-mute:#5E6672;
+  --hv-navy:#1B3A6B;
+  --hv-blue:#1B5DBF;
+  --hv-green:#1B7A45;
+  --hv-red:#C0392B;
+  --hv-line:#DDE3EB;
+  --hv-line-strong:#B9C4D4;
+  --hv-soft:#F5F7FA;
+  --hv-soft-blue:#EDF3FC;
+  --hv-board:#FBFBF7;
+
+  --hv-a-bg:#0B0B0B;
+  --hv-a-surface:#141414;
+  --hv-a-border:#2A2A2A;
+  --hv-a-fg:#FFFFFF;
+  --hv-a-dim:#C8C8C8;
+  --hv-a-accent:#FFD400;
+  --hv-a-accent-ink:#0B0B0B;
+  --hv-a-ok:#7CFFB2;
+  --hv-focus:#00E5FF;
+
+  --hv-s1:4px; --hv-s2:8px; --hv-s3:12px; --hv-s4:16px;
+  --hv-s5:24px; --hv-s6:32px; --hv-s7:48px; --hv-s8:64px; --hv-s9:96px;
+  --hv-r-sm:10px; --hv-r-md:14px; --hv-r-lg:20px; --hv-r-xl:28px; --hv-r-pill:999px;
+  --hv-sh-1:0 1px 2px rgba(17,17,17,.05), 0 2px 8px rgba(17,17,17,.04);
+  --hv-sh-2:0 2px 6px rgba(17,17,17,.06), 0 12px 28px rgba(17,17,17,.07);
+  --hv-font:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+
+*{ box-sizing:border-box; }
+html,body{ margin:0; padding:0; }
+body{
+  font-family:var(--hv-font); line-height:1.6;
+  -webkit-text-size-adjust:100%; overflow-x:hidden; max-width:100vw; word-break:keep-all;
+}
+h1,h2,h3,h4,p,figure,dl,dd{ margin:0; }
+ul,ol{ margin:0; padding:0; }
+img,svg,video,canvas{ display:block; max-width:100%; }
+button{ font-family:inherit; cursor:pointer; }
+a{ color:inherit; }
+[hidden]{ display:none !important; }
+:focus-visible{ outline:4px solid var(--hv-focus); outline-offset:3px; border-radius:4px; }
+.hv-sr-only{
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
+}
+.hv-skip{
+  position:absolute; left:12px; top:-120px; z-index:300;
+  background:var(--hv-a-accent); color:#000; font-weight:800;
+  padding:12px 18px; border-radius:var(--hv-r-sm); text-decoration:none;
+}
+.hv-skip:focus{ top:12px; }
+@media (prefers-reduced-motion:reduce){
+  *{ transition:none !important; animation:none !important; scroll-behavior:auto !important; }
+}
+.hv-ic{
+  width:1em; height:1em; display:inline-block; vertical-align:-0.14em;
+  stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round;
+}
+.hv-ic-sm{ width:20px; height:20px; }
+.hv-ic-md{ width:28px; height:28px; }
+.hv-ic-lg{ width:44px; height:44px; }
+.hv-ic-xl{ width:60px; height:60px; }
+
+/* ===== 1) 문서 얼굴 — .hv-doc ===== */
+.hv-doc{ background:var(--hv-white); color:var(--hv-body); }
+.hv-wrap{ width:100%; max-width:1120px; margin:0 auto; padding:0 20px; }
+.hv-section{ padding:96px 0; }
+@media (max-width:640px){ .hv-section{ padding:56px 0; } }
+.hv-section + .hv-section{ border-top:1px solid var(--hv-line); }
+
+.hv-eyebrow{
+  display:inline-block; font-size:13px; font-weight:800; letter-spacing:.08em;
+  color:var(--hv-blue); text-transform:uppercase; margin-bottom:12px;
+}
+.hv-h1{ font-size:clamp(31px,5.2vw,52px); line-height:1.18; font-weight:800; letter-spacing:-.025em; color:var(--hv-ink); }
+.hv-h2{ font-size:clamp(24px,3.4vw,36px); line-height:1.25; font-weight:800; letter-spacing:-.02em; color:var(--hv-ink); }
+.hv-h3{ font-size:19px; line-height:1.4; font-weight:800; color:var(--hv-ink); }
+.hv-lead{ font-size:clamp(17px,2vw,20px); color:var(--hv-body); max-width:62ch; }
+.hv-sub{ font-size:16px; color:var(--hv-mute); max-width:62ch; margin-top:12px; }
+.hv-p{ font-size:16px; color:var(--hv-body); }
+.hv-strong{ font-weight:800; color:var(--hv-navy); }
+.hv-strong-blue{ font-weight:800; color:var(--hv-blue); }
+.hv-head{ margin-bottom:32px; }
+
+.hv-btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  min-height:52px; padding:0 26px; border-radius:var(--hv-r-md);
+  font-size:16px; font-weight:800; text-decoration:none; border:2px solid transparent;
+  transition:background .15s, border-color .15s, color .15s;
+}
+.hv-btn-primary{ background:var(--hv-navy); color:#fff; }
+.hv-btn-primary:hover{ background:#14294B; }
+.hv-btn-secondary{ background:#fff; color:var(--hv-navy); border-color:var(--hv-line-strong); }
+.hv-btn-secondary:hover{ border-color:var(--hv-navy); background:var(--hv-soft-blue); }
+.hv-btn-ghost{
+  background:transparent; color:var(--hv-mute); border-color:var(--hv-line);
+  min-height:48px; padding:0 16px; font-size:14px; font-weight:700; border-radius:var(--hv-r-pill);
+}
+.hv-btn-ghost:hover{ color:var(--hv-navy); border-color:var(--hv-navy); }
+.hv-btn-row{ display:flex; gap:12px; flex-wrap:wrap; margin-top:24px; }
+
+.hv-card{
+  background:#fff; border:1px solid var(--hv-line); border-radius:var(--hv-r-lg);
+  padding:24px; box-shadow:var(--hv-sh-1);
+}
+.hv-card-soft{ background:var(--hv-soft); border-color:transparent; box-shadow:none; }
+.hv-card .hv-ic{ color:var(--hv-blue); }
+.hv-card-title{ font-size:18px; font-weight:800; color:var(--hv-ink); margin:12px 0 8px; }
+.hv-card-body{ font-size:15px; color:var(--hv-body); }
+
+.hv-grid{ display:grid; gap:16px; grid-template-columns:1fr; }
+@media (min-width:600px){ .hv-g2{ grid-template-columns:repeat(2,1fr); } }
+@media (min-width:760px){ .hv-g3{ grid-template-columns:repeat(3,1fr); } }
+@media (min-width:600px){ .hv-g4{ grid-template-columns:repeat(2,1fr); } }
+@media (min-width:1000px){ .hv-g4{ grid-template-columns:repeat(4,1fr); } }
+
+.hv-board{
+  background:var(--hv-board); border:1px solid var(--hv-line);
+  border-radius:var(--hv-r-lg); padding:24px; box-shadow:var(--hv-sh-1);
+}
+.hv-board figcaption{ margin-top:12px; font-size:14px; color:var(--hv-mute); text-align:center; }
+.hv-board svg{ width:100%; height:auto; }
+.hv-stroke{ fill:none; stroke-linecap:round; stroke-linejoin:round; }
+.hv-lbl{ font-family:var(--hv-font); font-weight:800; }
+
+.hv-compare{ display:grid; gap:16px; grid-template-columns:1fr; align-items:stretch; }
+@media (min-width:820px){ .hv-compare{ grid-template-columns:6fr 4fr; } }
+.hv-side-a{ background:var(--hv-soft); border:1px solid var(--hv-line); border-radius:var(--hv-r-lg); padding:24px; }
+.hv-side-b{
+  background:var(--hv-navy); color:#fff; border-radius:var(--hv-r-lg); padding:24px;
+  box-shadow:var(--hv-sh-2); display:flex; flex-direction:column; justify-content:center;
+}
+.hv-side-b .hv-tag{ color:#C4D6F2; }
+.hv-tag{
+  display:block; font-size:12px; font-weight:800; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--hv-mute); margin-bottom:8px;
+}
+.hv-quote-long{ font-size:15px; line-height:1.75; color:var(--hv-mute); }
+.hv-quote-short{ font-size:clamp(20px,2.6vw,27px); font-weight:800; line-height:1.4; }
+
+.hv-uc{
+  background:#fff; border:1px solid var(--hv-line); border-radius:var(--hv-r-md);
+  padding:16px; display:flex; flex-direction:column; gap:8px;
+}
+.hv-uc-ic{
+  width:44px; height:44px; border-radius:var(--hv-r-sm);
+  background:var(--hv-soft-blue); color:var(--hv-blue);
+  display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+}
+.hv-uc h3{ font-size:16px; font-weight:800; color:var(--hv-ink); }
+.hv-say{
+  margin-top:auto; font-size:14px; line-height:1.6; color:var(--hv-navy);
+  background:var(--hv-soft-blue); border-left:4px solid var(--hv-blue);
+  border-radius:0 var(--hv-r-sm) var(--hv-r-sm) 0; padding:10px 12px;
+}
+.hv-say-tag{ display:block; font-size:11px; font-weight:800; color:var(--hv-blue); letter-spacing:.04em; margin-bottom:2px; }
+
+.hv-step{ position:relative; padding-left:56px; }
+.hv-step .hv-num{
+  position:absolute; left:0; top:0; width:40px; height:40px; border-radius:var(--hv-r-pill);
+  background:var(--hv-navy); color:#fff; font-weight:800; font-size:16px;
+  display:flex; align-items:center; justify-content:center;
+}
+.hv-notice{ border:2px solid var(--hv-navy); border-radius:var(--hv-r-lg); background:var(--hv-soft-blue); padding:24px; }
+.hv-notice ul{ list-style:none; margin-top:16px; display:grid; gap:12px; }
+.hv-notice li{ display:flex; gap:10px; font-size:16px; color:var(--hv-ink); }
+.hv-notice li .hv-ic{ color:var(--hv-navy); flex:0 0 auto; margin-top:3px; }
+
+.hv-faq{ border-top:1px solid var(--hv-line); }
+.hv-faq details{ border-bottom:1px solid var(--hv-line); }
+.hv-faq summary{
+  list-style:none; cursor:pointer; padding:20px 44px 20px 0; position:relative;
+  font-size:17px; font-weight:800; color:var(--hv-ink); min-height:48px;
+}
+.hv-faq summary::-webkit-details-marker{ display:none; }
+.hv-faq summary::after{
+  content:"+"; position:absolute; right:8px; top:16px;
+  font-size:26px; font-weight:400; color:var(--hv-blue); line-height:1;
+}
+.hv-faq details[open] summary::after{ content:"—"; font-size:20px; top:20px; }
+.hv-faq-a{ padding:0 0 22px; font-size:16px; color:var(--hv-body); max-width:70ch; }
+
+.hv-price{ display:grid; gap:16px; grid-template-columns:1fr; }
+@media (min-width:700px){ .hv-price{ grid-template-columns:1fr 1fr; } }
+.hv-amount{ font-size:clamp(21px,3vw,28px); font-weight:800; color:var(--hv-navy); margin:8px 0; }
+
+.hv-foot{
+  border-top:1px solid var(--hv-line); padding:32px 0 64px;
+  display:flex; flex-wrap:wrap; gap:16px; justify-content:space-between;
+  font-size:14px; color:var(--hv-mute);
+}
+.hv-foot a{ color:var(--hv-navy); text-decoration:underline; text-underline-offset:3px; }
+.hv-foot nav{ display:flex; gap:16px; flex-wrap:wrap; }
+
+.hv-topbar{
+  position:sticky; top:0; z-index:50; background:rgba(255,255,255,.96);
+  border-bottom:1px solid var(--hv-line);
+  display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0;
+}
+.hv-brand{
+  display:inline-flex; align-items:center; gap:9px;
+  font-weight:800; font-size:19px; color:var(--hv-ink); text-decoration:none; letter-spacing:-.02em;
+}
+.hv-brand .hv-mark{ color:var(--hv-blue); }
+
+/* ===== 2) 접근성 얼굴 — .hv-a11y ===== */
+.hv-a11y{ background:var(--hv-a-bg); color:var(--hv-a-fg); }
+.hv-a-bar{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:calc(14px + env(safe-area-inset-top,0px)) 18px 14px;
+  border-bottom:1px solid var(--hv-a-border);
+}
+.hv-a-brand{ font-weight:800; font-size:21px; color:var(--hv-a-fg); text-decoration:none; }
+.hv-a-btn{
+  display:flex; align-items:center; justify-content:center; gap:10px;
+  min-height:72px; border-radius:16px; border:3px solid var(--hv-a-accent);
+  background:transparent; color:var(--hv-a-accent);
+  font-size:21px; font-weight:800; padding:12px 18px; width:100%;
+}
+.hv-a-btn-solid{ background:var(--hv-a-accent); color:var(--hv-a-accent-ink); }
+.hv-a-btn-quiet{
+  border-color:var(--hv-a-border); color:var(--hv-a-dim);
+  font-size:16px; font-weight:700; min-height:48px; border-width:2px; width:auto;
+}
+.hv-a-cta{
+  display:flex; align-items:center; justify-content:center; text-align:center; text-decoration:none;
+  margin:18px; padding:24px 20px; min-height:84px; border-radius:20px;
+  background:var(--hv-a-accent); color:var(--hv-a-accent-ink);
+  font-size:clamp(23px,5vw,31px); font-weight:800;
+}
+.hv-a-panel{
+  margin:0 18px 18px; padding:22px 20px;
+  background:var(--hv-a-surface); border:1px solid var(--hv-a-border); border-radius:18px;
+}
+.hv-a-panel h2{ display:flex; align-items:center; gap:12px; font-size:24px; font-weight:800; color:var(--hv-a-fg); }
+.hv-a-panel h2 .hv-ic{ color:var(--hv-a-accent); flex:0 0 auto; }
+.hv-a-panel p{ font-size:21px; line-height:1.6; color:var(--hv-a-dim); margin-top:12px; }
+.hv-a-panel.is-warn{ border:3px solid var(--hv-a-accent); }
+.hv-a-listen{
+  margin-top:16px; width:100%; min-height:56px; padding:0 18px;
+  background:transparent; color:var(--hv-a-accent);
+  border:2px solid var(--hv-a-accent); border-radius:12px; font-size:18px; font-weight:800;
+}
+.hv-a-foot{ padding:20px 18px 32px; text-align:center; color:var(--hv-a-dim); font-size:15px; }
+
+.hv-state{
+  display:inline-flex; align-items:center; gap:8px;
+  font-size:15px; font-weight:800; padding:6px 14px; border-radius:var(--hv-r-pill);
+  border:2px solid currentColor;
+}
+.hv-state .hv-dot{ width:10px; height:10px; border-radius:50%; background:currentColor; flex:0 0 auto; }
+.hv-state-idle{ color:var(--hv-a-dim); }
+.hv-state-ready{ color:var(--hv-a-accent); }
+.hv-state-busy{ color:var(--hv-a-ok); }
+.hv-state-busy .hv-dot{ border-radius:2px; }
+.hv-state-speak{ color:#FFFFFF; }
+.hv-state-speak .hv-dot{ border-radius:2px; transform:rotate(45deg); }
+
+/* ===== 목소리 고르개 (voice.js 가 내부를 그린다) ===== */
+.hv-picker{ display:flex; flex-wrap:wrap; gap:10px; }
+.hv-picker-item{
+  min-height:48px; padding:10px 16px; border-radius:var(--hv-r-pill);
+  font-size:15px; font-weight:700; cursor:pointer;
+  border:2px solid var(--hv-line-strong); background:#fff; color:var(--hv-navy);
+}
+.hv-picker-item[aria-pressed="true"], .hv-picker-item.is-selected{
+  background:var(--hv-navy); color:#fff; border-color:var(--hv-navy);
+}
+.hv-picker-speed{
+  display:flex; align-items:center; gap:10px; width:100%;
+  font-size:15px; font-weight:700; color:var(--hv-body); margin-top:4px;
+}
+.hv-picker-speed input[type="range"]{ flex:1; accent-color:var(--hv-blue); height:32px; }
+.hv-a11y .hv-picker-item, body[data-ui="voice"] .hv-picker-item{
+  background:transparent; color:var(--hv-a-accent); border-color:var(--hv-a-accent);
+  min-height:56px; font-size:17px; font-weight:800;
+}
+.hv-a11y .hv-picker-item[aria-pressed="true"], .hv-a11y .hv-picker-item.is-selected,
+body[data-ui="voice"] .hv-picker-item[aria-pressed="true"], body[data-ui="voice"] .hv-picker-item.is-selected{
+  background:var(--hv-a-accent); color:var(--hv-a-accent-ink);
+}
+.hv-a11y .hv-picker-speed, body[data-ui="voice"] .hv-picker-speed{ color:var(--hv-a-dim); font-size:17px; }
+.hv-a11y .hv-picker-speed input[type="range"], body[data-ui="voice"] .hv-picker-speed input[type="range"]{
+  accent-color:var(--hv-a-accent);
+}
+
+/* 고르개가 좁은 화면에서 넘치지 않게 — fieldset 기본 min-width 해제 */
+#voicePicker, #voicePickerVisual, .hv-picker, .hv-picker-group{ max-width:100%; min-width:0; }
+.hv-picker-group{ border:0; padding:0; margin:0 0 10px; display:flex; flex-wrap:wrap; gap:10px; }
+.hv-picker-group > legend{ font-size:14px; font-weight:700; padding:0; margin-bottom:6px; }
+.hv-picker-speed{ flex-wrap:wrap; min-width:0; }
+.hv-picker-item{ max-width:100%; }
