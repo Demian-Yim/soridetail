@@ -74,6 +74,16 @@ def voices_page():
     return FileResponse(BASE_DIR / "static" / "voices.html")
 
 
+@app.get("/.well-known/assetlinks.json")
+def android_asset_links():
+    """안드로이드 앱(TWA)으로 포장했을 때 주소창 없이 열리게 하는 소유 증명. 앱 서명 지문은 .env 의 ANDROID_ASSETLINKS 에 넣는다."""
+    reload_env()
+    links = os.getenv("ANDROID_ASSETLINKS", "")
+    if not links:
+        raise HTTPException(status_code=404, detail="아직 안드로이드 앱으로 포장하지 않았습니다.")
+    return Response(content=links, media_type="application/json")
+
+
 @app.get("/api/health")
 def health():
     reload_env()

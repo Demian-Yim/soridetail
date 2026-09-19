@@ -1,0 +1,11 @@
+.env
+.git
+.pytest_cache
+__pycache__
+*.pyc
+tests
+docs
+.workspace
+current_state.md
+SUBMISSION.md
+*.wav
