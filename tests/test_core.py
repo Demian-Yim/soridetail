@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "app"))
 
 import sandbox_job  # noqa: E402
-from app import main, vision  # noqa: E402
+from app import fetcher, main, vision  # noqa: E402
 
 HTML = """<html><head><title>독도 토너</title>
 <meta property="og:title" content="1025 독도 토너 200ml">
@@ -42,7 +42,7 @@ def test_pick_images_resolves_dedupes_and_filters():
 
 
 def test_to_ascii_url_encodes_korean_and_keeps_existing_percent():
-    out = sandbox_job.to_ascii_url("https://a.com/상품/%EC%A0%90?q=1")
+    out = fetcher.to_ascii_url("https://a.com/상품/%EC%A0%90?q=1")
     assert out.isascii() and "%EC%A0%90" in out and "%25" not in out and out.endswith("?q=1")
 
 
@@ -82,3 +82,43 @@ def test_vision_provider_priority(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "x")
     monkeypatch.setenv("GEMINI_API_KEY", "x")
     assert vision.provider_name() == "gemini:auto"  # 잔액 없는 OpenAI 보다 Gemini 우선
+
+
+@pytest.mark.parametrize("internal", [
+    "http://127.0.0.1:8000/admin", "http://localhost/x", "http://169.254.169.254/latest/meta-data/",
+])
+def test_fetcher_blocks_ssrf_targets(internal):
+    """서버가 직접 받아오므로 내부망 주소 차단이 필수다."""
+    with pytest.raises(fetcher.UnsafeUrlError):
+        fetcher.assert_public_url(internal)
+
+
+def test_sandbox_job_has_no_network_code():
+    """샌드박스 스크립트는 네트워크를 쓰지 않아야 한다 (해석 전용)."""
+    source = (ROOT / "app" / "sandbox_job.py").read_text(encoding="utf-8")
+    for banned in ("urllib.request", "httpx", "socket", "requests"):
+        assert banned not in source
+
+
+def test_parse_mode_lists_wanted_images(tmp_path):
+    html = tmp_path / "p.html"
+    html.write_bytes(HTML.encode("utf-8"))
+    out = tmp_path / "out"
+    sandbox_job.parse_mode(str(html), "https://shop.example.com/product/1", str(out))
+    result = json.loads((out / "result.json").read_text(encoding="utf-8"))
+    assert result["title"] == "1025 독도 토너 200ml"
+    assert result["wanted"] == [
+        "https://shop.example.com/img/detail_01.jpg",
+        "https://cdn.example.com/a.jpg",
+    ]
+    assert result["image_alts_missing"] == 1
+
+
+def test_tile_mode_dedupes_identical_images(tmp_path):
+    imgs, out = tmp_path / "imgs", tmp_path / "out"
+    imgs.mkdir()
+    Image.new("RGB", (1000, 1400), "white").save(imgs / "img_00.bin", "PNG")
+    Image.new("RGB", (1000, 1400), "white").save(imgs / "img_01.bin", "PNG")  # 같은 내용
+    sandbox_job.tile_mode(str(imgs), str(out))
+    tiles = json.loads((out / "tiles.json").read_text(encoding="utf-8"))
+    assert tiles["tiles"] == ["tile_00.jpg"] and tiles["errors"] == []

@@ -9,7 +9,7 @@ Korean online shops publish product details (price options, ingredients, allerge
 ## What it does
 
 1. The user pastes (or speaks) a product URL and presses one big button.
-2. A **Daytona sandbox** opens the unknown page, downloads the detail images and slices the tall images into readable tiles.
+2. The server downloads the raw bytes (SSRF-guarded) and hands them to a **Daytona sandbox**, which parses the untrusted HTML and decodes/slices the detail images into readable tiles.
 3. A vision model reads the tiles and writes a short, fact-first guide **designed to be listened to** (price → features → size/ingredients/allergens → cautions).
 4. The browser reads it aloud automatically. The user can then ask follow-up questions by voice ("Does it contain peanuts?").
 
@@ -19,19 +19,23 @@ Every progress step is announced by voice, because a blind user cannot see a spi
 
 | File | What happens |
 |---|---|
-| [app/sandbox_runner.py](app/sandbox_runner.py) | `Daytona.create()` → `sandbox.fs.upload_file()` → `sandbox.process.exec()` → `sandbox.fs.download_file()` → `sandbox.delete()`. One request = one disposable sandbox. |
-| [app/sandbox_job.py](app/sandbox_job.py) | The script that runs **inside** the sandbox: fetches the untrusted page, downloads images with the right Referer, de-duplicates, and tiles tall images with Pillow. |
+| [app/sandbox_runner.py](app/sandbox_runner.py) | `Daytona.create()` → `fs.upload_file()` → `process.exec(parse)` → `process.exec(tile)` → `fs.download_file()` → `sandbox.delete()` in a `finally`. One request = one disposable sandbox. |
+| [app/sandbox_job.py](app/sandbox_job.py) | Runs **inside** the sandbox. Contains **no network code at all** (a test enforces this). It only parses untrusted HTML and decodes/tiles untrusted images with Pillow. |
+| [app/fetcher.py](app/fetcher.py) | Runs on the server. Only *fetches bytes* — never parses them — and refuses private/loopback/link-local addresses. |
 
-**Why a sandbox and not our own server?** The service opens arbitrary URLs supplied by users and parses arbitrary images. Doing that inside a disposable, isolated Daytona sandbox keeps SSRF, malicious files and decompression bombs away from the app server, and each request starts from a clean machine.
+**The split is the security design.** Parsing hostile input is the dangerous part: image decoders (Pillow / libjpeg / zlib) have a long CVE history, and a single decompression bomb can take down a process. So the app server never decodes a byte it did not produce. All parsing happens in a throwaway Daytona sandbox that, on our tier, has **no outbound internet at all** — so even a successful exploit in the decoder has nowhere to send anything, and the machine is destroyed seconds later.
+
+This is a deliberate reversal of the obvious design. We first put the *fetching* in the sandbox; Daytona's tier-based network policy blocks sandbox egress, which pushed us to a split that turned out to be strictly safer.
 
 ## Architecture
 
 ```
 Browser (voice in / voice out, high-contrast, keyboard-only friendly)
    │  POST /api/read  (NDJSON progress stream)
-FastAPI  ── Daytona SDK ──►  Sandbox: fetch page → download images → tile
-   │                          ◄── result.json + tile_*.jpg
-   └── Vision model (Gemini / Claude / OpenAI-compatible endpoint such as a Nosana GPU)
+FastAPI
+   ├── fetcher.py  : bytes only, SSRF-guarded              (trusted side)
+   ├── Daytona SDK : parse HTML → tile images, no network   (untrusted side)
+   └── Vision model: Gemini / Claude / OpenAI-compatible (e.g. a Nosana GPU)
 ```
 
 ## Run
@@ -56,3 +60,5 @@ Demo URL: `https://roundlab.co.kr/product/1025-독도-토너-200ml/22/category/1
 
 - Pages rendered only by JavaScript or behind bot protection (e.g. some large marketplaces) are not readable yet — next step is a headless browser inside the sandbox.
 - Reads up to 10 tiles per page to keep latency around 30 seconds.
+
+Measured end to end on a real product page: **29.7 s**, 11 images found, **9 with no alt text**, 10 tiles read. The model reported price, volume, shipping and return terms correctly, and explicitly said the ingredient list and expiry date were "not confirmed in the image" rather than inventing them.

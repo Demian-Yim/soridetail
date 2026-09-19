@@ -1,24 +1,20 @@
-"""Daytona 샌드박스 안에서 실행되는 수집 스크립트.
+"""Daytona 샌드박스 안에서만 실행되는 해석 스크립트 — 네트워크를 쓰지 않는다.
 
-모르는 웹페이지를 우리 서버가 아니라 격리된 샌드박스에서 열어
-① 본문 텍스트 ② 상세 이미지를 내려받고 ③ 세로로 긴 이미지를 읽기 좋은 타일로 자른다.
-결과는 OUT_DIR/result.json + tile_*.jpg 로 남긴다.
+신뢰할 수 없는 바이트(남의 HTML·이미지)를 해석하는 위험한 일을 전부 여기서 한다.
+샌드박스는 외부 인터넷이 차단돼 있어, 설령 악성 이미지로 코드 실행이 일어나도
+바깥으로 데이터를 빼낼 수 없다.
 
-사용: python sandbox_job.py <url> <out_dir>
+  parse <html_path> <base_url> <out_dir>   HTML 해석 → result.json (텍스트·이미지 주소 목록)
+  tile  <img_dir> <out_dir>                이미지 디코딩 → tile_*.jpg (세로로 긴 이미지 분할)
 """
 import hashlib
 import json
 import os
 import re
 import sys
-import urllib.request
 from html.parser import HTMLParser
-from urllib.parse import quote, urljoin, urlparse
+from urllib.parse import urljoin, urlparse
 
-UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
-MAX_HTML_BYTES = 3_000_000
-MAX_IMAGE_BYTES = 12_000_000
 MAX_CANDIDATES = 12
 MAX_TILES = 10
 TILE_WIDTH = 1000
@@ -71,21 +67,7 @@ class PageParser(HTMLParser):
             self.texts.append(text)
 
 
-def to_ascii_url(url):
-    """한글이 섞인 주소도 열 수 있게 ASCII 로 인코딩한다 (이미 인코딩된 % 는 보존)."""
-    return quote(url, safe=":/?#[]@!$&'()*+,;=%~")
-
-
-def fetch(url, referer=None, limit=MAX_HTML_BYTES):
-    headers = {"User-Agent": UA, "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8"}
-    if referer:
-        headers["Referer"] = to_ascii_url(referer)
-    req = urllib.request.Request(to_ascii_url(url), headers=headers)
-    with urllib.request.urlopen(req, timeout=20) as res:
-        return res.read(limit), res.headers.get_content_charset()
-
-
-def decode_html(raw, charset):
+def decode_html(raw, charset=None):
     for enc in (charset, "utf-8", "euc-kr", "cp949"):
         if not enc:
             continue
@@ -133,54 +115,59 @@ def slice_image(path, out_dir, start_index):
     return tiles
 
 
-def main(url, out_dir):
+def parse_mode(html_path, base_url, out_dir):
+    """신뢰할 수 없는 HTML 을 샌드박스 안에서 해석한다."""
     os.makedirs(out_dir, exist_ok=True)
-    result = {"url": url, "title": "", "description": "", "text": "",
-              "image_alts_missing": 0, "image_count": 0, "tiles": [], "errors": []}
-
-    raw, charset = fetch(url)
+    raw = open(html_path, "rb").read()
     parser = PageParser()
-    parser.feed(decode_html(raw, charset))
+    parser.feed(decode_html(raw, None))
 
-    result["title"] = parser.meta.get("og:title") or parser.title
-    result["description"] = parser.meta.get("og:description") or parser.meta.get("description", "")
-    result["text"] = re.sub(r"\s+", " ", " ".join(parser.texts))[:MAX_TEXT_CHARS]
-
-    candidates = pick_images(parser.images, url)
+    candidates = pick_images(parser.images, base_url)
     og_image = parser.meta.get("og:image")
     if og_image:
-        candidates.insert(0, {"src": urljoin(url, og_image), "alt": ""})
-    result["image_count"] = len(candidates)
-    result["image_alts_missing"] = sum(1 for c in candidates if not c["alt"])
+        candidates.insert(0, {"src": urljoin(base_url, og_image), "alt": ""})
 
-    seen_digests = set()
-    for i, cand in enumerate(candidates[:MAX_CANDIDATES]):
-        if len(result["tiles"]) >= MAX_TILES:
-            break
-        tmp = os.path.join(out_dir, "src_%02d.bin" % i)
-        try:
-            data, _ = fetch(cand["src"], referer=url, limit=MAX_IMAGE_BYTES)
-            digest = hashlib.md5(data).hexdigest()
-            if digest in seen_digests:  # 대표 이미지가 썸네일로 반복되는 경우
-                continue
-            seen_digests.add(digest)
-            with open(tmp, "wb") as f:
-                f.write(data)
-            result["tiles"] += slice_image(tmp, out_dir, len(result["tiles"]))
-        except Exception as exc:  # 이미지 1장 실패가 전체를 막지 않게 한다
-            result["errors"].append("%s: %s" % (cand["src"][:80], exc))
-        finally:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-
+    result = {
+        "url": base_url,
+        "title": parser.meta.get("og:title") or parser.title,
+        "description": parser.meta.get("og:description") or parser.meta.get("description", ""),
+        "text": re.sub(r"\s+", " ", " ".join(parser.texts))[:MAX_TEXT_CHARS],
+        "image_count": len(candidates),
+        "image_alts_missing": sum(1 for c in candidates if not c["alt"]),
+        "wanted": [c["src"] for c in candidates[:MAX_CANDIDATES]],
+    }
     with open(os.path.join(out_dir, "result.json"), "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False)
-    print("JOB_OK tiles=%d text=%d" % (len(result["tiles"]), len(result["text"])))
+    print("PARSE_OK images=%d text=%d" % (result["image_count"], len(result["text"])))
+
+
+def tile_mode(img_dir, out_dir):
+    """신뢰할 수 없는 이미지를 샌드박스 안에서 디코딩·분할한다."""
+    os.makedirs(out_dir, exist_ok=True)
+    tiles, errors, seen = [], [], set()
+    for name in sorted(os.listdir(img_dir)):
+        if len(tiles) >= MAX_TILES:
+            break
+        path = os.path.join(img_dir, name)
+        try:
+            digest = hashlib.md5(open(path, "rb").read()).hexdigest()
+            if digest in seen:  # 대표 이미지가 썸네일로 반복되는 경우
+                continue
+            seen.add(digest)
+            tiles += slice_image(path, out_dir, len(tiles))
+        except Exception as exc:  # 이미지 1장 실패가 전체를 막지 않게 한다
+            errors.append("%s: %s" % (name, exc))
+    with open(os.path.join(out_dir, "tiles.json"), "w", encoding="utf-8") as f:
+        json.dump({"tiles": tiles, "errors": errors}, f, ensure_ascii=False)
+    print("TILE_OK tiles=%d" % len(tiles))
 
 
 if __name__ == "__main__":
     try:
-        main(sys.argv[1], sys.argv[2])
+        if sys.argv[1] == "parse":
+            parse_mode(sys.argv[2], sys.argv[3], sys.argv[4])
+        else:
+            tile_mode(sys.argv[2], sys.argv[3])
     except Exception as exc:
         print("JOB_FAIL %s" % exc)
         sys.exit(1)

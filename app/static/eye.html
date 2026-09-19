@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>소리눈 — 눈앞을 짧게 말해주는 AI 안내자</title>
+<style>
+  :root { --bg:#0B0B0B; --fg:#FFFFFF; --accent:#FFD400; --line:#5A5A5A; --ok:#7CFFB2; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-size:22px; line-height:1.6;
+         font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif; }
+  main { max-width:980px; margin:0 auto; padding:28px 20px 80px; }
+  h1 { font-size:44px; margin:0 0 8px; color:var(--accent); }
+  p.lead { margin:0 0 20px; }
+  a { color:var(--accent); }
+  .row { display:flex; gap:12px; flex-wrap:wrap; margin-top:14px; }
+  button { font-size:24px; font-weight:800; padding:18px 26px; min-height:64px; border-radius:12px;
+           border:3px solid var(--accent); background:transparent; color:var(--accent); cursor:pointer; }
+  button.primary, button[aria-pressed="true"] { background:var(--accent); color:#000; }
+  button#nowBtn { font-size:32px; min-height:96px; flex:1 1 100%; }
+  button:disabled { opacity:.5; cursor:wait; }
+  :focus-visible { outline:5px solid #00E5FF; outline-offset:3px; }
+  .stage { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; margin-top:20px; }
+  @media (max-width:760px) { .stage { grid-template-columns:1fr; } }
+  video { width:100%; border-radius:12px; border:3px solid var(--line); background:#000; aspect-ratio:4/3; object-fit:cover; }
+  #callout { font-size:34px; font-weight:800; line-height:1.4; padding:20px; min-height:180px;
+             border-left:8px solid var(--accent); }
+  #status { margin-top:16px; min-height:40px; }
+  #stats { font-size:18px; color:var(--ok); margin-top:8px; }
+  .skip { position:absolute; left:-9999px; } .skip:focus { left:12px; top:12px; background:#000; padding:12px; }
+</style>
+</head>
+<body>
+<a class="skip" href="#nowBtn">지금 알려줘 버튼으로 바로가기</a>
+<main>
+  <h1>소리눈</h1>
+  <p class="lead">카메라로 눈앞을 비추면, 필요한 것만 짧게 말해 드립니다. 전부 묘사하지 않습니다.
+     스페이스 키는 지금 알려줘, 엠 키는 말로 요청입니다. <a href="/">화면 속 상세페이지 읽기는 소리상세</a></p>
+
+  <div class="row">
+    <button type="button" id="startBtn" class="primary">카메라 켜기</button>
+    <button type="button" id="endBtn" disabled>끝내기 (샌드박스 삭제)</button>
+    <button type="button" id="stopBtn">음성 멈춤</button>
+  </div>
+
+  <div class="row" role="group" aria-label="안내 방식">
+    <button type="button" class="mode" data-mode="look" aria-pressed="true">둘러보기</button>
+    <button type="button" class="mode" data-mode="find" aria-pressed="false">찾기</button>
+    <button type="button" class="mode" data-mode="read" aria-pressed="false">읽기</button>
+    <button type="button" class="mode" data-mode="people" aria-pressed="false">사람</button>
+  </div>
+
+  <div class="row">
+    <button type="button" id="nowBtn" class="primary" disabled>지금 알려줘</button>
+    <button type="button" id="micBtn" aria-pressed="false" disabled>말로 요청</button>
+    <button type="button" id="watchBtn" aria-pressed="false" disabled>계속 보기</button>
+  </div>
+
+  <div class="stage">
+    <video id="video" autoplay playsinline muted aria-label="카메라 미리보기"></video>
+    <div>
+      <div id="callout" role="status" aria-live="assertive">카메라 켜기를 누르세요.</div>
+      <div id="status" role="status" aria-live="polite"></div>
+      <div id="stats"></div>
+    </div>
+  </div>
+  <canvas id="canvas" hidden></canvas>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const FRAME_WIDTH = 960, JPEG_QUALITY = 0.7, WATCH_INTERVAL_MS = 4000;
+const MODE_GUIDE = { look: "둘러보기", find: "찾기. 말로 요청을 눌러 찾을 것을 말씀하세요", read: "읽기", people: "사람" };
+let sessionId = "", mode = "look", lastCallout = "", busy = false, watchTimer = null;
+
+function speak(text) {
+  if (!("speechSynthesis" in window) || !text) return;
+  speechSynthesis.cancel();  // 새 안내가 옛 안내를 끊는다 — 늦은 정보는 위험하다
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = "ko-KR"; u.rate = 1.15;
+  speechSynthesis.speak(u);
+}
+function setStatus(message, say = false) { $("status").textContent = message; if (say) speak(message); }
+function setCallout(text) { $("callout").textContent = text; speak(text); }
+async function post(path, body) {
+  const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "요청이 거절되었습니다.");
+  return data;
+}
+
+$("startBtn").onclick = async () => {
+  $("startBtn").disabled = true;
+  try {
+    setStatus("카메라를 켜고 있습니다.", true);
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }, audio: false });
+    $("video").srcObject = stream;
+    setStatus("이번 세션 전용 샌드박스를 준비하고 있습니다.", true);
+    const s = await post("/api/eye/start");
+    sessionId = s.session_id;
+    $("stats").textContent = s.where === "daytona"
+      ? `Daytona 샌드박스 ${sessionId.slice(0, 8)} 준비 ${s.seconds}초 · 프레임은 이 샌드박스 안에서만 점검되고 끝내면 삭제됩니다`
+      : "Daytona 키가 없어 로컬 점검으로 동작 중";
+    for (const id of ["nowBtn", "micBtn", "watchBtn", "endBtn"]) $(id).disabled = false;
+    setCallout("준비되었습니다. 지금 알려줘를 누르세요.");
+    $("nowBtn").focus();
+  } catch (err) {
+    $("startBtn").disabled = false;
+    setCallout("카메라를 켜지 못했습니다. " + err.message);
+  }
+};
+
+function grabFrame() {
+  const v = $("video"), c = $("canvas");
+  if (!v.videoWidth) throw new Error("카메라 화면이 아직 준비되지 않았습니다.");
+  c.width = Math.min(FRAME_WIDTH, v.videoWidth);
+  c.height = Math.round(c.width * v.videoHeight / v.videoWidth);
+  c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", JPEG_QUALITY).split(",")[1];
+}
+
+async function look(requestMode, question = "") {
+  if (busy || !sessionId) return;
+  busy = true;
+  const started = performance.now();
+  if (requestMode !== "watch") setStatus("보고 있습니다.");
+  try {
+    const r = await post("/api/eye/look", { session_id: sessionId, image_b64: grabFrame(), mode: requestMode,
+                                            question, last_callout: lastCallout });
+    const ms = Math.round(performance.now() - started), q = r.quality;
+    $("stats").textContent = `${q.where === "daytona" ? "Daytona 샌드박스 " + q.sandbox_id.slice(0, 8) : "로컬"} 점검 ${q.check_ms}ms · ` +
+      `밝기 ${q.luma} · 선명도 ${q.sharpness} · 변화량 ${q.change ?? "첫 장면"} · 응답 ${(ms / 1000).toFixed(1)}초`;
+    if (r.silent || !r.callout) { setStatus(requestMode === "watch" ? "변화 없음 — 말하지 않습니다." : "말할 것이 없습니다."); }
+    else { lastCallout = r.callout; setStatus(""); setCallout(r.callout); }
+  } catch (err) { setCallout("문제가 생겼습니다. " + err.message); }
+  finally { busy = false; }
+}
+
+$("nowBtn").onclick = () => look(mode);
+$("stopBtn").onclick = () => speechSynthesis.cancel();
+
+for (const btn of document.querySelectorAll(".mode")) btn.onclick = () => {
+  mode = btn.dataset.mode;
+  for (const other of document.querySelectorAll(".mode")) other.setAttribute("aria-pressed", String(other === btn));
+  setStatus(MODE_GUIDE[mode] + " 방식입니다.", true);
+};
+
+$("watchBtn").onclick = () => {
+  const on = $("watchBtn").getAttribute("aria-pressed") !== "true";
+  $("watchBtn").setAttribute("aria-pressed", String(on));
+  clearInterval(watchTimer);
+  if (on) { watchTimer = setInterval(() => look("watch"), WATCH_INTERVAL_MS); setStatus("계속 보기를 시작합니다. 달라질 때만 말합니다.", true); }
+  else setStatus("계속 보기를 멈췄습니다.", true);
+};
+
+$("endBtn").onclick = async () => {
+  clearInterval(watchTimer); $("watchBtn").setAttribute("aria-pressed", "false");
+  for (const track of ($("video").srcObject?.getTracks() || [])) track.stop();
+  $("video").srcObject = null;
+  try { const r = await post("/api/eye/end", { session_id: sessionId }); setCallout(r.deleted ? "끝냈습니다. 샌드박스와 사진을 모두 지웠습니다." : "끝냈습니다."); }
+  catch (err) { setCallout("끝내는 중 문제가 생겼습니다. " + err.message); }
+  sessionId = ""; lastCallout = "";
+  for (const id of ["nowBtn", "micBtn", "watchBtn", "endBtn"]) $(id).disabled = true;
+  $("startBtn").disabled = false;
+};
+
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!Recognition) $("micBtn").hidden = true;
+else $("micBtn").onclick = () => {
+  speechSynthesis.cancel();
+  const rec = new Recognition(); rec.lang = "ko-KR"; rec.interimResults = false;
+  $("micBtn").setAttribute("aria-pressed", "true"); setStatus("듣고 있습니다. 원하는 것을 말씀하세요.");
+  rec.onresult = (ev) => { const said = ev.results[0][0].transcript; setStatus("요청: " + said); look(mode, said); };
+  rec.onerror = () => setStatus("알아듣지 못했습니다. 다시 눌러 주세요.", true);
+  rec.onend = () => $("micBtn").setAttribute("aria-pressed", "false");
+  rec.start();
+};
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "BUTTON" || e.repeat) return;
+  if (e.code === "Space") { e.preventDefault(); $("nowBtn").click(); }
+  if (e.code === "KeyM") $("micBtn").click();
+});
+window.addEventListener("pagehide", () => {
+  if (sessionId) navigator.sendBeacon("/api/eye/end", new Blob([JSON.stringify({ session_id: sessionId })], { type: "application/json" }));
+});
+</script>
+</body>
+</html>

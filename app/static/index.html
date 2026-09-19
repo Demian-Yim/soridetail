@@ -35,6 +35,8 @@
   <h1>소리상세</h1>
   <p class="lead">이미지로만 된 상품 상세페이지를 대신 읽어 드립니다. 상품 주소를 넣고 읽어줘 버튼을 누르세요.</p>
 
+  <p id="ready" role="status">준비 상태를 확인하는 중입니다.</p>
+
   <form id="readForm">
     <label for="url">상품 페이지 주소</label>
     <input id="url" type="url" inputmode="url" autocomplete="off" required
@@ -43,6 +45,7 @@
     <div class="row">
       <button type="submit" id="readBtn">읽어줘</button>
       <button type="button" class="ghost" id="pasteBtn">주소 붙여넣기</button>
+      <button type="button" class="ghost" id="demoBtn">데모 주소 넣기</button>
       <button type="button" class="ghost" id="stopBtn">음성 멈춤</button>
     </div>
   </form>
@@ -71,7 +74,23 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
+const DEMO_URL = "https://roundlab.co.kr/product/1025-독도-토너-200ml/22/category/1/display/2/";
 let lastAnswer = "";
+
+// 키를 .env 에 저장한 뒤 새로고침하면 바로 확인되도록 — 발표 직전 점검용
+async function checkReady() {
+  try {
+    const s = await (await fetch("/api/health")).json();
+    const daytona = s.daytona_key ? "Daytona 키 확인됨" : "Daytona 키 없음 (.env 를 저장하세요)";
+    const vision = s.vision === "none" ? "이미지 읽기 AI 키 없음" : "이미지 읽기 AI: " + s.vision;
+    const ok = s.daytona_key && s.vision !== "none";
+    $("ready").textContent = (ok ? "준비 완료 · " : "준비 안 됨 · ") + daytona + " · " + vision;
+    $("ready").style.color = ok ? "var(--ok)" : "var(--accent)";
+  } catch {
+    $("ready").textContent = "서버에 연결하지 못했습니다.";
+  }
+}
+checkReady();
 
 function speak(text) {
   if (!("speechSynthesis" in window) || !text) return;
@@ -87,6 +106,7 @@ function setStatus(message, say = true) { $("status").textContent = message; if 
 
 $("stopBtn").onclick = () => speechSynthesis.cancel();
 $("replayBtn").onclick = () => speak(lastAnswer);
+$("demoBtn").onclick = () => { $("url").value = DEMO_URL; setStatus("데모 주소를 넣었습니다. 읽어줘 버튼을 누르세요."); };
 $("pasteBtn").onclick = async () => {
   try { $("url").value = (await navigator.clipboard.readText()).trim(); setStatus("주소를 붙여넣었습니다. 읽어줘 버튼을 누르세요."); }
   catch { setStatus("붙여넣기 권한이 없습니다. 주소 칸에 직접 붙여넣어 주세요."); }

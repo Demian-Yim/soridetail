@@ -3,9 +3,13 @@
 흐름: 주소 입력 → Daytona 샌드박스가 페이지 수집·이미지 타일링 → 비전 AI가 읽기 → 음성 안내.
 실행: uvicorn app.main:app --port 8000
 """
+import base64
+import binascii
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -14,7 +18,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import vision
+from app import eye_session, vision
 from app.sandbox_runner import collect_page
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -105,3 +109,89 @@ def ask(req: AskRequest):
     except Exception as exc:
         print(f"[ask] {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=502, detail="답변을 만드는 중 문제가 생겼습니다.") from exc
+
+
+# ───────── 눈앞 보기 (실시간 카메라 안내) ─────────
+
+MAX_FRAME_BYTES = 3_000_000
+JPEG_MAGIC = bytes.fromhex("ffd8ff")
+
+
+class LookRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    image_b64: str = Field(min_length=100, max_length=4_200_000)
+    mode: Literal["look", "find", "read", "people", "watch"] = "look"
+    question: str = Field(default="", max_length=300)
+    last_callout: str = Field(default="", max_length=600)
+
+
+class SessionRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+
+
+def decode_frame(image_b64: str) -> bytes:
+    try:
+        jpeg = base64.b64decode(image_b64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="사진을 읽지 못했습니다.") from exc
+    if len(jpeg) > MAX_FRAME_BYTES or not jpeg.startswith(JPEG_MAGIC):
+        raise HTTPException(status_code=400, detail="JPEG 사진만, 3메가바이트 이하로 보낼 수 있습니다.")
+    return jpeg
+
+
+@app.get("/eye")
+def eye_page():
+    return FileResponse(BASE_DIR / "static" / "eye.html")
+
+
+@app.post("/api/eye/start")
+def eye_start():
+    reload_env()
+    try:
+        return eye_session.start()
+    except Exception as exc:
+        print(f"[eye_start] {type(exc).__name__}: {exc}")
+        raise HTTPException(status_code=502, detail=f"샌드박스를 준비하지 못했습니다. {exc}") from exc
+
+
+@app.post("/api/eye/look")
+def eye_look(req: LookRequest):
+    """프레임 점검(샌드박스)과 장면 판독(비전 AI)을 동시에 돌린다. 계속 보기에서는 점검을 먼저 하고 변화가 없으면 침묵한다."""
+    jpeg = decode_frame(req.image_b64)
+    reload_env()
+    try:
+        if req.mode == "watch":
+            quality = eye_session.check_frame(req.session_id, jpeg)
+            if not quality["usable"] or not quality["changed"]:
+                return {"callout": " ".join(quality["hints"]), "silent": not quality["hints"], "quality": quality}
+            callout = vision.look(req.image_b64, req.mode, req.question, req.last_callout)
+        else:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                quality_job = pool.submit(eye_session.check_frame, req.session_id, jpeg)
+                callout_job = pool.submit(vision.look, req.image_b64, req.mode, req.question, req.last_callout)
+                quality, callout = quality_job.result(), callout_job.result()
+            if not quality["usable"]:
+                callout = ""
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"[eye_look] {type(exc).__name__}: {exc}")
+        raise HTTPException(status_code=502, detail=f"장면을 읽는 중 문제가 생겼습니다. {exc}") from exc
+
+    silent = callout.strip() == vision.NO_CHANGE and not quality["hints"]
+    spoken = "" if callout.strip() == vision.NO_CHANGE else callout
+    return {"callout": " ".join([*quality["hints"], spoken]).strip(), "silent": silent, "quality": quality}
+
+
+@app.post("/api/eye/end")
+def eye_end(req: SessionRequest):
+    try:
+        return {"deleted": eye_session.end(req.session_id)}
+    except Exception as exc:
+        print(f"[eye_end] {type(exc).__name__}: {exc}")
+        raise HTTPException(status_code=502, detail="샌드박스를 지우지 못했습니다.") from exc
+
+
+@app.on_event("shutdown")
+def delete_all_sandboxes():
+    eye_session.end_all()
