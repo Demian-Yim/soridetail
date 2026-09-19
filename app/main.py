@@ -58,8 +58,20 @@ def event(kind: str, **data) -> str:
 
 
 @app.get("/")
+def landing():
+    """첫 화면은 헤이 비전 안내(랜딩). 랜딩 파일이 아직 없으면 소리상세를 보여 준다."""
+    page = BASE_DIR / "static" / "landing.html"
+    return FileResponse(page if page.exists() else BASE_DIR / "static" / "index.html")
+
+
+@app.get("/detail")
 def index():
     return FileResponse(BASE_DIR / "static" / "index.html")
+
+
+@app.get("/voices")
+def voices_page():
+    return FileResponse(BASE_DIR / "static" / "voices.html")
 
 
 @app.get("/api/health")

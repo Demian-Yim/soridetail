@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>헤이 비전 — 목소리 고르기</title>
+<style>
+  :root { --bg:#0B0B0B; --card:#141414; --line:#2A2A2A; --fg:#FFFFFF; --sub:#C8C8C8; --accent:#FFD400; --ok:#7CFFB2; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-size:20px; line-height:1.6;
+         font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:32px 16px 80px; }
+  h1 { font-size:36px; margin:0 0 8px; color:var(--accent); }
+  p { color:var(--sub); margin:0 0 24px; }
+  a { color:var(--accent); }
+  ul { list-style:none; margin:0; padding:0; display:grid; gap:12px; }
+  li { background:var(--card); border:1px solid var(--line); border-radius:20px; padding:16px;
+       display:grid; grid-template-columns:1fr auto auto; gap:12px; align-items:center; }
+  li[data-chosen="true"] { border-color:var(--accent); }
+  .name { font-weight:800; font-size:22px; }
+  .tag { display:block; font-size:16px; color:var(--sub); font-weight:400; }
+  button { font-size:18px; font-weight:800; min-height:56px; padding:12px 18px; border-radius:14px; cursor:pointer;
+           border:2px solid var(--accent); background:transparent; color:var(--accent); }
+  button.pick { background:var(--accent); color:#000; }
+  :focus-visible { outline:4px solid #00E5FF; outline-offset:3px; }
+  #status { margin-top:24px; min-height:32px; color:var(--ok); }
+  @media (max-width:520px) { li { grid-template-columns:1fr 1fr; } .name { grid-column:1 / -1; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>목소리 고르기</h1>
+  <p>들어보기를 눌러 직접 듣고, 마음에 드는 목소리에서 이 목소리로를 누르세요. 고른 목소리는 이 기기의 헤이 비전과 소리상세에 모두 적용됩니다. <a href="/">첫 화면으로</a></p>
+  <ul id="list"></ul>
+  <div id="status" role="status" aria-live="polite"></div>
+</main>
+<script src="/static/voice.js"></script>
+<script>
+const VOICES = [
+  ["F4", "여성 4", "기본값. 측정상 가장 따뜻하고 경쾌한 음색"], ["F1", "여성 1", ""], ["F2", "여성 2", ""],
+  ["F3", "여성 3", ""], ["F5", "여성 5", ""], ["M1", "남성 1", "차분한 남성 음성"], ["M2", "남성 2", ""],
+];
+const SAMPLE = "반갑습니다. 헤이 비전입니다. 열두 시 방향 약 세 걸음 앞에 내려가는 계단이 있습니다.";
+const KEY = "heyvision-voice";
+const list = document.getElementById("list"), status = document.getElementById("status");
+const chosen = () => localStorage.getItem(KEY) || "F4";
+
+function render() {
+  list.textContent = "";
+  for (const [id, name, note] of VOICES) {
+    const li = document.createElement("li"); li.dataset.chosen = String(chosen() === id);
+    const label = document.createElement("span"); label.className = "name";
+    label.textContent = name + (chosen() === id ? " · 지금 사용 중" : "");
+    if (note) { const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = note; label.append(tag); }
+    const listen = document.createElement("button"); listen.type = "button"; listen.textContent = "들어보기";
+    listen.setAttribute("aria-label", name + " 들어보기");
+    listen.onclick = () => Voice.speak(SAMPLE, id);
+    const pick = document.createElement("button"); pick.type = "button"; pick.className = "pick"; pick.textContent = "이 목소리로";
+    pick.setAttribute("aria-label", name + " 으로 정하기");
+    pick.onclick = () => { localStorage.setItem(KEY, id); render(); status.textContent = name + " 으로 정했습니다."; Voice.speak("이 목소리로 안내해 드리겠습니다."); };
+    li.append(label, listen, pick); list.append(li);
+  }
+}
+render();
+</script>
+</body>
+</html>

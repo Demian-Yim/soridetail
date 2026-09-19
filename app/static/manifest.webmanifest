@@ -1,6 +1,6 @@
 {
-  "name": "한마디",
-  "short_name": "한마디",
+  "name": "헤이 비전 — 눈앞을 말해주는 AI 안내",
+  "short_name": "헤이 비전",
   "description": "카메라로 눈앞을 비추면 필요한 것만 짧게 말해주는 시각장애인용 안내 앱",
   "lang": "ko",
   "display": "standalone",

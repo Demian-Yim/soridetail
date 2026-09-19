@@ -1,4 +1,4 @@
-# 한마디 — 3분 발표 대본과 제출 문구
+# 헤이 비전 — 3분 발표 대본과 제출 문구
 
 > 2026-09-19 · FLOW : AX디자인연구소 · 데모 주소는 발표 직전 current_state.md 의 최신 터널 주소로 확인
 
@@ -30,7 +30,7 @@
 
 ## 제출 폼 문구 (English)
 
-**Project name**: Hanmadi (한마디) + SoriDetail
+**Project name**: Hey Vision (헤이 비전) + SoriDetail
 
 **One line**: A camera guide for blind users that says only what matters — hazards first, two sentences, silence when nothing changed — with every camera session isolated in a disposable Daytona sandbox.
 

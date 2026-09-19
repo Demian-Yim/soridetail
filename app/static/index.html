@@ -30,7 +30,7 @@
 </style>
 </head>
 <body>
-<a class="skip" href="#url">주소 입력으로 바로가기</a>
+<a class="skip" href="/">헤이 비전 첫 화면으로</a> <a class="skip" href="#url">주소 입력으로 바로가기</a>
 <main>
   <h1>소리상세</h1>
   <p class="lead">이미지로만 된 상품 상세페이지를 대신 읽어 드립니다. 상품 주소를 넣고 읽어줘 버튼을 누르세요.</p>
@@ -72,6 +72,7 @@
   </section>
 </main>
 
+<script src="/static/voice.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const DEMO_URL = "https://roundlab.co.kr/product/1025-독도-토너-200ml/22/category/1/display/2/";
@@ -92,19 +93,11 @@ async function checkReady() {
 }
 checkReady();
 
-function speak(text) {
-  if (!("speechSynthesis" in window) || !text) return;
-  speechSynthesis.cancel();
-  // 긴 글은 브라우저가 중간에 끊으므로 문장 단위로 나눠 읽는다
-  for (const chunk of text.match(/[^.!?。\n]+[.!?。\n]*/g) || [text]) {
-    const u = new SpeechSynthesisUtterance(chunk.trim());
-    u.lang = "ko-KR"; u.rate = 1.05;
-    if (u.text) speechSynthesis.speak(u);
-  }
-}
+// 자연 음성(Supertonic 3)으로 읽는다. 서버 음성을 못 쓰면 voice.js 가 브라우저 음성으로 내려간다.
+const speak = (text) => Voice.speak(text);
 function setStatus(message, say = true) { $("status").textContent = message; if (say) speak(message); }
 
-$("stopBtn").onclick = () => speechSynthesis.cancel();
+$("stopBtn").onclick = () => Voice.stop();
 $("replayBtn").onclick = () => speak(lastAnswer);
 $("demoBtn").onclick = () => { $("url").value = DEMO_URL; setStatus("데모 주소를 넣었습니다. 읽어줘 버튼을 누르세요."); };
 $("pasteBtn").onclick = async () => {
@@ -163,7 +156,7 @@ $("askForm").onsubmit = async (e) => {
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (!Recognition) { $("micBtn").hidden = true; }
 else $("micBtn").onclick = () => {
-  speechSynthesis.cancel();
+  Voice.stop();
   const rec = new Recognition(); rec.lang = "ko-KR"; rec.interimResults = false;
   $("micBtn").setAttribute("aria-pressed", "true"); $("status").textContent = "듣고 있습니다. 질문을 말씀하세요.";
   rec.onresult = (ev) => { $("question").value = ev.results[0][0].transcript; $("askForm").requestSubmit(); };

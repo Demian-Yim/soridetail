@@ -11,9 +11,9 @@ from functools import lru_cache
 from pathlib import Path
 
 MODEL = "supertonic-3"
-DEFAULT_VOICE = os.getenv("GUIDE_VOICE", "M1")
+DEFAULT_VOICE = os.getenv("GUIDE_VOICE", "F4")  # 2026-09-19 측정: 여성 5종 중 음색 중심이 가장 낮고(따뜻함) 말 속도가 가장 경쾌
 VOICES = ("M1", "M2", "M3", "M4", "M5", "F1", "F2", "F3", "F4", "F5")
-SPEED = float(os.getenv("GUIDE_VOICE_SPEED", "1.15"))  # 안내는 또렷하고 약간 빠르게
+SPEED = float(os.getenv("GUIDE_VOICE_SPEED", "1.1"))  # 안내는 또렷하고 약간 빠르게
 MAX_TEXT_CHARS = 400
 WARMUP_TEXT = "준비되었습니다."
 

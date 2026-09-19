@@ -1,7 +1,7 @@
-# 한마디 활용 시나리오와 평가 계획 v0.1
+# 헤이 비전 활용 시나리오와 평가 계획 v0.1
 
 > 2026-09-19 · FLOW : AX디자인연구소 · 작성 Bono, 편집 Max
-> [검증] 규약 원문 `docs/HANMADI-PROTOCOL.md`, 프롬프트 정본 `app/vision.py` 의 `GUIDE_PROMPT`·`SELF_PROMPT`.
+> [검증] 규약 원문 `docs/HEYVISION-PROTOCOL.md`, 프롬프트 정본 `app/vision.py` 의 `GUIDE_PROMPT`·`SELF_PROMPT`.
 > 아래 콜아웃 예시는 모두 **[추정]** — 실제 모델 출력이 아니라 규약이 요구하는 목표 문장입니다.
 > 전제: 응답 약 4초 · **멈춰 서서 파악하는 도구** · 흰 지팡이·안내견 대체 아님.
 

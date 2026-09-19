@@ -3,11 +3,11 @@
 Built at **Daytona HackSprint Seoul** (2026-09-19) · Solo · FLOW : AX디자인연구소
 
 > **One engine, two inputs — turning what cannot be seen into what can be heard.**
-> **SoriDetail** reads what is *on the screen* (image-only product pages). **Hanmadi (한마디)** reads what is *in front of you* (the phone camera). Open `/` for SoriDetail, `/eye` for Hanmadi.
+> **SoriDetail** reads what is *on the screen* (image-only product pages). **Hey Vision (헤이 비전)** reads what is *in front of you* (the phone camera). Open `/eye` for Hey Vision, `/` for the landing page, `/detail` for SoriDetail.
 
-## Hanmadi (한마디, "just one word") — a camera guide that says only what you need
+## Hey Vision (헤이 비전) — a camera guide that says only what you need
 
-Built by someone who has guided blind people by voice for over ten years. Today's AI tools *describe everything* ("I see a street with trees…"). A human guide does the opposite: says the one thing that matters, first, in few words — and stays silent otherwise. Hanmadi encodes that judgment.
+Built by someone who has guided blind people by voice for over ten years. Today's AI tools *describe everything* ("I see a street with trees…"). A human guide does the opposite: says the one thing that matters, first, in few words — and stays silent otherwise. Hey Vision encodes that judgment.
 
 - **Guide callout protocol** ([app/vision.py](app/vision.py) `GUIDE_PROMPT`): hazards first → way and direction → what you asked. Clock-face directions and steps. Two sentences max. Silence when nothing changed. Never says "it is safe". When unsure: "not sure" + how to move the camera.
 - **Rear camera**: look around, find, read, people, keep watching. **Front camera ("my look")**: stains, open buttons, crooked glasses, video-call framing. It never judges appearance, mood or health.
@@ -15,7 +15,7 @@ Built by someone who has guided blind people by voice for over ten years. Today'
 - **Natural local voice** (Supertonic 3, free, no quota). The first sentence is synthesised first so a hazard is never delayed. Users can hand speech over to VoiceOver/TalkBack instead, so two voices never overlap.
 - **Mobile-first PWA**: one 120px thumb-zone button, haptics, wake lock, black/yellow high contrast.
 - Measured on real Daytona + Gemini: session sandbox 5.0s, frame check 0.6–1.4s, callout ~3.9s, same scene → silent in 0.7s. It is a *stop-and-understand* tool, **not** an obstacle-avoidance tool, and it does not replace a white cane or guide dog.
-- Docs: [portable protocol for Gemini/ChatGPT/Grok video modes](docs/HANMADI-PROTOCOL.md) · [12 scenarios + numeric evaluation plan](docs/SCENARIOS.md) · [listener-first user guide](docs/USER-GUIDE.md)
+- Docs: [portable protocol for Gemini/ChatGPT/Grok video modes](docs/HEYVISION-PROTOCOL.md) · [12 scenarios + numeric evaluation plan](docs/SCENARIOS.md) · [listener-first user guide](docs/USER-GUIDE.md)
 
 # SoriDetail
 
@@ -70,7 +70,7 @@ Demo URL: `https://roundlab.co.kr/product/1025-독도-토너-200ml/22/category/1
 
 - `aria-live` status region + spoken progress, focus moves to the result heading when done
 - 22px+ text, 64px+ touch targets, black/yellow contrast, visible focus ring, skip link
-- Speech in (Web Speech API, `ko-KR`) and speech out (`speechSynthesis`) — no screen needed
+- Speech in (Web Speech API, `ko-KR`) and natural speech out (Supertonic 3, warm female voice by default; pick another at `/voices`) — no screen needed
 - The model is told to never guess numbers it cannot read and to say so instead
 
 ## Limits (honest)

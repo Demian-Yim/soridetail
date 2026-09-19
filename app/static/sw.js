@@ -1,4 +1,4 @@
-// 한마디 서비스워커 — 최소 캐시. /api/ 요청은 절대 가로채지 않는다(항상 네트워크 그대로 통과).
+// 헤이 비전 서비스워커 — 최소 캐시. /api/ 요청은 절대 가로채지 않는다(항상 네트워크 그대로 통과).
 const CACHE_NAME = "hanmadi-v1";
 const CACHED_PATHS = ["/eye", "/static/voice.js", "/static/manifest.webmanifest", "/static/icon.svg"];
 
