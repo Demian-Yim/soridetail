@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+.workspace/
+.pytest_cache/
+current_state.md

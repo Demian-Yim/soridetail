@@ -1,0 +1,5 @@
+daytona
+fastapi
+uvicorn
+httpx
+python-dotenv
