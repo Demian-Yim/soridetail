@@ -102,3 +102,57 @@ def test_voice_presets_resolve_to_a_real_voice_and_a_clamped_speed():
     assert voice.resolve(voice="ZZ")[0] == voice.preset()["voice"]        # 없는 음성 이름은 무시
     assert all(item["voice"] in voice.VOICES for item in voice.PRESETS)
     assert len({item["id"] for item in voice.PRESETS}) == len(voice.PRESETS)
+
+
+def test_rate_limit_blocks_a_burst_per_ip_but_not_other_ips(monkeypatch):
+    """공개 주소에서 한 사람이 몰아쳐도 키 요금이 새지 않아야 하고, 그 때문에 다른 사람이 막히면 안 된다."""
+    from types import SimpleNamespace
+
+    from app import limits
+
+    def visitor(ip: str):
+        return SimpleNamespace(headers={"x-forwarded-for": f"{ip}, 10.0.0.1"}, client=None)
+
+    limits.reset()
+    monkeypatch.setenv("LIMIT_LOOK_PER_MIN", "3")
+    for second in range(3):
+        limits.check("look", visitor("1.1.1.1"), now=1000.0 + second)
+    with pytest.raises(HTTPException) as blocked:
+        limits.check("look", visitor("1.1.1.1"), now=1003.0)
+    assert blocked.value.status_code == 429 and blocked.value.detail == limits.MESSAGES["minute"]
+    limits.check("look", visitor("2.2.2.2"), now=1003.0)     # 다른 사람은 영향 없음
+    limits.check("look", visitor("1.1.1.1"), now=1061.0)     # 1분 지나면 풀린다
+    limits.reset()
+
+
+def test_rate_limit_daily_total_cap_protects_the_whole_service(monkeypatch):
+    from types import SimpleNamespace
+
+    from app import limits
+
+    limits.reset()
+    monkeypatch.setenv("LIMIT_LOOK_TOTAL_PER_DAY", "2")
+    for n in range(2):
+        limits.check("look", SimpleNamespace(headers={"x-forwarded-for": f"9.9.9.{n}"}, client=None), now=5000.0)
+    with pytest.raises(HTTPException) as blocked:
+        limits.check("look", SimpleNamespace(headers={"x-forwarded-for": "9.9.9.7"}, client=None), now=5001.0)
+    assert blocked.value.detail == limits.MESSAGES["total"]
+    limits.check("look", SimpleNamespace(headers={"x-forwarded-for": "9.9.9.7"}, client=None), now=5000.0 + limits.DAY + 1)
+    limits.reset()
+
+
+def test_idle_sessions_are_swept_so_abandoned_sandboxes_do_not_keep_billing(monkeypatch):
+    from app import eye_session
+
+    deleted = []
+
+    class FakeSandbox:
+        def __init__(self, name): self.name = name
+        def delete(self): deleted.append(self.name)
+
+    monkeypatch.setattr(eye_session, "_sessions", {
+        "old": {"sandbox": FakeSandbox("old"), "work_dir": "/x", "used": 1000.0},
+        "fresh": {"sandbox": FakeSandbox("fresh"), "work_dir": "/x", "used": 1000.0 + eye_session.IDLE_SECONDS},
+    })
+    assert eye_session.sweep(now=1000.0 + eye_session.IDLE_SECONDS + 5) == 1
+    assert deleted == ["old"] and list(eye_session._sessions) == ["fresh"]

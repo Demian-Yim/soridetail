@@ -14,12 +14,12 @@ from typing import Literal
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import eye_session, vision, voice
+from app import eye_session, limits, vision, voice
 from app.sandbox_runner import collect_page
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -91,9 +91,10 @@ def health():
 
 
 @app.post("/api/read")
-def read_page(req: ReadRequest):
+def read_page(req: ReadRequest, request: Request):
     """진행 상황을 한 줄씩(NDJSON) 흘려보낸다 — 화면을 못 보는 사용자가 기다리는 동안 음성으로 안내받도록."""
     url = validate_url(req.url)
+    limits.check("read", request)
     reload_env()
 
     def stream():
@@ -126,7 +127,8 @@ def read_page(req: ReadRequest):
 
 
 @app.post("/api/ask")
-def ask(req: AskRequest):
+def ask(req: AskRequest, request: Request):
+    limits.check("ask", request)
     try:
         return {"answer": vision.answer_question(req.question, req.context)}
     except Exception as exc:
@@ -177,7 +179,8 @@ def service_worker():
 
 
 @app.post("/api/eye/start")
-def eye_start():
+def eye_start(request: Request):
+    limits.check("start", request)
     reload_env()
     try:
         return eye_session.start()
@@ -187,9 +190,10 @@ def eye_start():
 
 
 @app.post("/api/eye/look")
-def eye_look(req: LookRequest):
+def eye_look(req: LookRequest, request: Request):
     """프레임 점검(샌드박스)과 장면 판독(비전 AI)을 동시에 돌린다. 계속 보기에서는 점검을 먼저 하고 변화가 없으면 침묵한다."""
     jpeg = decode_frame(req.image_b64)
+    limits.check("look", request)
     reload_env()
     try:
         if req.mode == "watch":
@@ -251,7 +255,8 @@ def public_config():
 
 
 @app.post("/api/tts")
-def speak_text(req: SpeakRequest):
+def speak_text(req: SpeakRequest, request: Request):
+    limits.check("tts", request)
     try:
         name, speed = voice.resolve(req.preset, req.voice, req.speed)
         return Response(content=voice.synthesize_wav(req.text, name, speed), media_type="audio/wav")
