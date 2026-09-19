@@ -2,6 +2,23 @@
 
 Built at **Daytona HackSprint Seoul** (2026-09-19) · Solo · FLOW : AX디자인연구소
 
+> **One engine, two inputs — turning what cannot be seen into what can be heard.**
+> **SoriDetail** reads what is *on the screen* (image-only product pages). **Hanmadi (한마디)** reads what is *in front of you* (the phone camera). Open `/` for SoriDetail, `/eye` for Hanmadi.
+
+## Hanmadi (한마디, "just one word") — a camera guide that says only what you need
+
+Built by someone who has guided blind people by voice for over ten years. Today's AI tools *describe everything* ("I see a street with trees…"). A human guide does the opposite: says the one thing that matters, first, in few words — and stays silent otherwise. Hanmadi encodes that judgment.
+
+- **Guide callout protocol** ([app/vision.py](app/vision.py) `GUIDE_PROMPT`): hazards first → way and direction → what you asked. Clock-face directions and steps. Two sentences max. Silence when nothing changed. Never says "it is safe". When unsure: "not sure" + how to move the camera.
+- **Rear camera**: look around, find, read, people, keep watching. **Front camera ("my look")**: stains, open buttons, crooked glasses, video-call framing. It never judges appearance, mood or health.
+- **Daytona is the privacy boundary.** A blind user's camera sees the inside of their home, medicine bags, mail and cards. One camera session = one disposable sandbox ([app/eye_session.py](app/eye_session.py)). Frames are checked inside it for darkness, blur and scene change ([app/frame_job.py](app/frame_job.py)) — a blind user cannot see that a photo is bad — and the sandbox is deleted when the session ends. In "keep watching", the sandbox decides whether the AI is called at all: no change, no call, no speech.
+- **Natural local voice** (Supertonic 3, free, no quota). The first sentence is synthesised first so a hazard is never delayed. Users can hand speech over to VoiceOver/TalkBack instead, so two voices never overlap.
+- **Mobile-first PWA**: one 120px thumb-zone button, haptics, wake lock, black/yellow high contrast.
+- Measured on real Daytona + Gemini: session sandbox 5.0s, frame check 0.6–1.4s, callout ~3.9s, same scene → silent in 0.7s. It is a *stop-and-understand* tool, **not** an obstacle-avoidance tool, and it does not replace a white cane or guide dog.
+- Docs: [portable protocol for Gemini/ChatGPT/Grok video modes](docs/HANMADI-PROTOCOL.md) · [12 scenarios + numeric evaluation plan](docs/SCENARIOS.md) · [listener-first user guide](docs/USER-GUIDE.md)
+
+# SoriDetail
+
 ## The problem
 
 Korean online shops publish product details (price options, ingredients, allergens, sizes, expiry, return rules) as **one very long image**. Screen readers cannot read images, so a blind shopper hears "image, image, image" and cannot make a purchase decision alone. On the demo page below, **9 of 11 images had no alt text**.
