@@ -223,13 +223,28 @@ def delete_all_sandboxes():
 
 class SpeakRequest(BaseModel):
     text: str = Field(min_length=1, max_length=voice.MAX_TEXT_CHARS)
-    voice: str = Field(default=voice.DEFAULT_VOICE, max_length=4)
+    preset: str = Field(default="", max_length=20)   # 톤 프리셋 id (voice.PRESETS). 비우면 기본 프리셋
+    voice: str = Field(default="", max_length=4)      # 음성 이름을 직접 지정할 때만 (M1~M5, F1~F5)
+    speed: float = Field(default=1.0, ge=0.5, le=2.0)  # 속도 배율 — 프리셋의 기본 속도에 곱한다
+
+
+@app.get("/api/voices")
+def voice_catalog():
+    return voice.catalog()
+
+
+@app.get("/api/config")
+def public_config():
+    """화면이 필요로 하는 공개 설정. 문의 메일은 .env 의 CONTACT_EMAIL 을 넣었을 때만 노출한다."""
+    reload_env()
+    return {"contact_email": os.getenv("CONTACT_EMAIL", ""), "repo": "https://github.com/Demian-Yim/soridetail"}
 
 
 @app.post("/api/tts")
 def speak_text(req: SpeakRequest):
     try:
-        return Response(content=voice.synthesize_wav(req.text, req.voice), media_type="audio/wav")
+        name, speed = voice.resolve(req.preset, req.voice, req.speed)
+        return Response(content=voice.synthesize_wav(req.text, name, speed), media_type="audio/wav")
     except voice.VoiceUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:

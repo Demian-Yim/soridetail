@@ -83,10 +83,22 @@ def test_tts_falls_back_cleanly_when_voice_engine_is_missing(monkeypatch):
 
     from app import main, voice
 
-    def unavailable(text, voice_name):
+    def unavailable(text, voice_name, speed):
         raise voice.VoiceUnavailable("없음")
 
     monkeypatch.setattr(main.voice, "synthesize_wav", unavailable)
     client = TestClient(main.app)
     assert client.post("/api/tts", json={"text": "안내"}).status_code == 503
     assert client.post("/api/tts", json={"text": ""}).status_code == 422
+
+
+def test_voice_presets_resolve_to_a_real_voice_and_a_clamped_speed():
+    from app import voice
+
+    assert voice.preset("nope")["id"] == voice.preset()["id"]           # 모르는 프리셋은 기본값으로
+    assert voice.resolve("brisk") == ("F4", 1.1)
+    assert voice.resolve("bright", factor=1.4)[1] == round(1.15 * 1.4, 2)  # 속도 배율은 프리셋 기본 속도에 곱한다
+    assert voice.resolve("bright", factor=9)[1] == voice.MAX_SPEED        # 한도를 넘지 않는다
+    assert voice.resolve(voice="ZZ")[0] == voice.preset()["voice"]        # 없는 음성 이름은 무시
+    assert all(item["voice"] in voice.VOICES for item in voice.PRESETS)
+    assert len({item["id"] for item in voice.PRESETS}) == len(voice.PRESETS)
