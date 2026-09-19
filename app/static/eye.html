@@ -2,86 +2,134 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>소리눈 — 눈앞을 짧게 말해주는 AI 안내자</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FFD400">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<title>한마디 — 눈앞을 한마디로 말해주는 AI 안내자</title>
 <style>
-  :root { --bg:#0B0B0B; --fg:#FFFFFF; --accent:#FFD400; --line:#5A5A5A; --ok:#7CFFB2; }
+  :root { --bg:#0B0B0B; --fg:#FFFFFF; --accent:#FFD400; --line:#5A5A5A; --ok:#7CFFB2; --bar-h:calc(120px + 76px + 44px); }
   * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font-size:22px; line-height:1.6;
-         font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif; }
-  main { max-width:980px; margin:0 auto; padding:28px 20px 80px; }
-  h1 { font-size:44px; margin:0 0 8px; color:var(--accent); }
-  p.lead { margin:0 0 20px; }
+  html, body { margin:0; }
+  body { background:var(--bg); color:var(--fg); font-size:20px; line-height:1.6;
+         font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+         padding-bottom: calc(var(--bar-h) + env(safe-area-inset-bottom, 0px)); overflow-x:hidden; }
+  main { max-width:1100px; margin:0 auto; padding:20px 16px 24px; }
+  h1 { font-size:34px; margin:0 0 6px; color:var(--accent); }
+  p.lead { margin:0 0 16px; font-size:17px; }
   a { color:var(--accent); }
-  .row { display:flex; gap:12px; flex-wrap:wrap; margin-top:14px; }
-  button { font-size:24px; font-weight:800; padding:18px 26px; min-height:64px; border-radius:12px;
-           border:3px solid var(--accent); background:transparent; color:var(--accent); cursor:pointer; }
+  .layout { display:block; }
+  @media (min-width:900px) { .layout { display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start; } }
+  .panel { margin-bottom:16px; padding:14px; border:2px solid var(--line); border-radius:14px; }
+  .panel > .panel-title { margin:0 0 10px; font-size:16px; color:var(--ok); }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  fieldset { border:none; padding:0; margin:0; }
+  legend { color:var(--ok); font-size:16px; padding:0 0 8px; }
+  label { display:flex; align-items:center; gap:10px; padding:10px 0; font-size:18px; min-height:44px; }
+  input[type="radio"] { width:24px; height:24px; accent-color:var(--accent); }
+  button { font-size:19px; font-weight:800; padding:14px 18px; min-height:64px; border-radius:12px;
+           border:3px solid var(--accent); background:transparent; color:var(--accent); cursor:pointer; flex:1 1 auto; }
   button.primary, button[aria-pressed="true"] { background:var(--accent); color:#000; }
-  button#nowBtn { font-size:32px; min-height:96px; flex:1 1 100%; }
   button:disabled { opacity:.5; cursor:wait; }
   :focus-visible { outline:5px solid #00E5FF; outline-offset:3px; }
-  .stage { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; margin-top:20px; }
-  @media (max-width:760px) { .stage { grid-template-columns:1fr; } }
-  video { width:100%; border-radius:12px; border:3px solid var(--line); background:#000; aspect-ratio:4/3; object-fit:cover; }
-  #callout { font-size:34px; font-weight:800; line-height:1.4; padding:20px; min-height:180px;
+  .modegrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(130px,1fr)); gap:10px; width:100%; }
+  .modegrid button { width:100%; }
+  #camwrap { margin-top:10px; }
+  video { width:100%; max-height:22vh; display:block; border-radius:12px; border:3px solid var(--line);
+          background:#000; object-fit:cover; }
+  #previewToggleBtn { min-height:52px; font-size:16px; }
+  #callout { font-size:30px; font-weight:800; line-height:1.4; padding:16px; min-height:140px;
              border-left:8px solid var(--accent); }
-  #status { margin-top:16px; min-height:40px; }
-  #stats { font-size:18px; color:var(--ok); margin-top:8px; }
-  .skip { position:absolute; left:-9999px; } .skip:focus { left:12px; top:12px; background:#000; padding:12px; }
+  #status { margin-top:14px; min-height:36px; font-size:18px; }
+  #stats { font-size:16px; color:var(--ok); margin-top:8px; }
+  .skip { position:absolute; left:-9999px; }
+  .skip:focus { left:12px; top:12px; background:#000; padding:12px; z-index:100; }
+  .bottombar { position:fixed; left:0; right:0; bottom:0; z-index:50; background:var(--bg);
+               border-top:3px solid var(--accent); padding:10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); }
+  #nowBtn { width:100%; min-height:120px; font-size:28px; margin-bottom:10px; }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .row2 button { min-height:64px; }
 </style>
 </head>
 <body>
 <a class="skip" href="#nowBtn">지금 알려줘 버튼으로 바로가기</a>
 <main>
-  <h1>소리눈</h1>
+  <h1>한마디</h1>
   <p class="lead">카메라로 눈앞을 비추면, 필요한 것만 짧게 말해 드립니다. 전부 묘사하지 않습니다.
      스페이스 키는 지금 알려줘, 엠 키는 말로 요청입니다. <a href="/">화면 속 상세페이지 읽기는 소리상세</a></p>
 
-  <div class="row">
-    <button type="button" id="startBtn" class="primary">카메라 켜기</button>
-    <button type="button" id="endBtn" disabled>끝내기 (샌드박스 삭제)</button>
-    <button type="button" id="stopBtn">음성 멈춤</button>
-  </div>
+  <div class="layout">
+    <div class="colLeft">
+      <section class="panel" aria-label="카메라 제어">
+        <div class="row">
+          <button type="button" id="startBtn" class="primary">카메라 켜기</button>
+          <button type="button" id="endBtn" disabled>끝내기 (샌드박스 삭제)</button>
+          <button type="button" id="stopBtn">음성 멈춤</button>
+        </div>
+      </section>
 
-  <div class="row" role="group" aria-label="안내 방식">
-    <button type="button" class="mode" data-mode="look" aria-pressed="true">둘러보기</button>
-    <button type="button" class="mode" data-mode="find" aria-pressed="false">찾기</button>
-    <button type="button" class="mode" data-mode="read" aria-pressed="false">읽기</button>
-    <button type="button" class="mode" data-mode="people" aria-pressed="false">사람</button>
-  </div>
+      <section class="panel" aria-label="카메라 미리보기">
+        <button type="button" id="previewToggleBtn" aria-pressed="true">미리보기 숨기기</button>
+        <div id="camwrap">
+          <video id="video" autoplay playsinline muted aria-hidden="true" tabindex="-1"></video>
+        </div>
+      </section>
 
-  <div class="row">
-    <button type="button" id="nowBtn" class="primary" disabled>지금 알려줘</button>
-    <button type="button" id="micBtn" aria-pressed="false" disabled>말로 요청</button>
-    <button type="button" id="watchBtn" aria-pressed="false" disabled>계속 보기</button>
-  </div>
+      <section class="panel" aria-label="안내 방식 선택">
+        <div class="row modegrid" role="group" aria-label="안내 방식">
+          <button type="button" class="mode" data-mode="look" aria-pressed="true">둘러보기</button>
+          <button type="button" class="mode" data-mode="find" aria-pressed="false">찾기</button>
+          <button type="button" class="mode" data-mode="read" aria-pressed="false">읽기</button>
+          <button type="button" class="mode" data-mode="people" aria-pressed="false">사람</button>
+          <button type="button" class="mode" data-mode="self" aria-pressed="false">내 모습</button>
+        </div>
+      </section>
 
-  <div class="stage">
-    <video id="video" autoplay playsinline muted aria-label="카메라 미리보기"></video>
-    <div>
-      <div id="callout" role="status" aria-live="assertive">카메라 켜기를 누르세요.</div>
-      <div id="status" role="status" aria-live="polite"></div>
-      <div id="stats"></div>
+      <section class="panel" aria-label="음성 방식 설정">
+        <fieldset>
+          <legend>음성 방식</legend>
+          <label><input type="radio" name="voiceMode" id="voiceNatural" value="natural" checked> 자연 음성으로 듣기</label>
+          <label><input type="radio" name="voiceMode" id="voiceScreenreader" value="screenreader"> 스크린리더에 맡기기</label>
+        </fieldset>
+      </section>
+    </div>
+
+    <div class="colRight">
+      <section class="panel" aria-label="안내 내용">
+        <div id="callout" role="status" aria-live="assertive">카메라 켜기를 누르세요.</div>
+        <div id="status" role="status" aria-live="polite"></div>
+        <div id="stats"></div>
+      </section>
     </div>
   </div>
+
   <canvas id="canvas" hidden></canvas>
 </main>
 
+<div class="bottombar">
+  <button type="button" id="nowBtn" class="primary" disabled>지금 알려줘</button>
+  <div class="row2">
+    <button type="button" id="micBtn" aria-pressed="false" disabled>말로 요청</button>
+    <button type="button" id="watchBtn" aria-pressed="false" disabled>계속 보기</button>
+  </div>
+</div>
+
+<script src="/static/voice.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const FRAME_WIDTH = 960, JPEG_QUALITY = 0.7, WATCH_INTERVAL_MS = 4000;
-const MODE_GUIDE = { look: "둘러보기", find: "찾기. 말로 요청을 눌러 찾을 것을 말씀하세요", read: "읽기", people: "사람" };
+const VOICE_MODE_KEY = "hanmadi-voice-mode";
+const MODE_GUIDE = { look: "둘러보기", find: "찾기. 말로 요청을 눌러 찾을 것을 말씀하세요", read: "읽기", people: "사람",
+                     self: "내 모습. 전면 카메라로 확인합니다" };
 let sessionId = "", mode = "look", lastCallout = "", busy = false, watchTimer = null;
+let currentFacing = "environment", wakeLock = null;
 
-function speak(text) {
-  if (!("speechSynthesis" in window) || !text) return;
-  speechSynthesis.cancel();  // 새 안내가 옛 안내를 끊는다 — 늦은 정보는 위험하다
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = "ko-KR"; u.rate = 1.15;
-  speechSynthesis.speak(u);
-}
+function voiceMode() { return localStorage.getItem(VOICE_MODE_KEY) || "natural"; }
+function speak(text) { if (!text) return; if (voiceMode() === "natural") Voice.speak(text); }
 function setStatus(message, say = false) { $("status").textContent = message; if (say) speak(message); }
 function setCallout(text) { $("callout").textContent = text; speak(text); }
+function vibrate(pattern) { if ("vibrate" in navigator) { try { navigator.vibrate(pattern); } catch (e) {} } }
+
 async function post(path, body) {
   const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
   const data = await res.json();
@@ -89,12 +137,35 @@ async function post(path, body) {
   return data;
 }
 
+async function requestWakeLock() {
+  if (!("wakeLock" in navigator)) return;
+  try { wakeLock = await navigator.wakeLock.request("screen"); }
+  catch (e) { wakeLock = null; }
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && sessionId && !wakeLock) requestWakeLock();
+});
+
+for (const radio of document.querySelectorAll('input[name="voiceMode"]')) {
+  radio.addEventListener("change", () => { if (radio.checked) localStorage.setItem(VOICE_MODE_KEY, radio.value); });
+}
+(() => {
+  const stored = localStorage.getItem(VOICE_MODE_KEY);
+  if (stored) { const el = document.querySelector('input[name="voiceMode"][value="' + stored + '"]'); if (el) el.checked = true; }
+})();
+
+async function openCamera(facing) {
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 1280 } }, audio: false });
+  for (const track of ($("video").srcObject?.getTracks() || [])) track.stop();
+  $("video").srcObject = stream;
+  currentFacing = facing;
+}
+
 $("startBtn").onclick = async () => {
   $("startBtn").disabled = true;
   try {
     setStatus("카메라를 켜고 있습니다.", true);
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }, audio: false });
-    $("video").srcObject = stream;
+    await openCamera("environment");
     setStatus("이번 세션 전용 샌드박스를 준비하고 있습니다.", true);
     const s = await post("/api/eye/start");
     sessionId = s.session_id;
@@ -104,6 +175,7 @@ $("startBtn").onclick = async () => {
     for (const id of ["nowBtn", "micBtn", "watchBtn", "endBtn"]) $(id).disabled = false;
     setCallout("준비되었습니다. 지금 알려줘를 누르세요.");
     $("nowBtn").focus();
+    requestWakeLock();
   } catch (err) {
     $("startBtn").disabled = false;
     setCallout("카메라를 켜지 못했습니다. " + err.message);
@@ -122,27 +194,47 @@ function grabFrame() {
 async function look(requestMode, question = "") {
   if (busy || !sessionId) return;
   busy = true;
+  vibrate(30);
   const started = performance.now();
   if (requestMode !== "watch") setStatus("보고 있습니다.");
   try {
     const r = await post("/api/eye/look", { session_id: sessionId, image_b64: grabFrame(), mode: requestMode,
                                             question, last_callout: lastCallout });
     const ms = Math.round(performance.now() - started), q = r.quality;
+    vibrate([40, 60, 40]);
     $("stats").textContent = `${q.where === "daytona" ? "Daytona 샌드박스 " + q.sandbox_id.slice(0, 8) : "로컬"} 점검 ${q.check_ms}ms · ` +
       `밝기 ${q.luma} · 선명도 ${q.sharpness} · 변화량 ${q.change ?? "첫 장면"} · 응답 ${(ms / 1000).toFixed(1)}초`;
     if (r.silent || !r.callout) { setStatus(requestMode === "watch" ? "변화 없음 — 말하지 않습니다." : "말할 것이 없습니다."); }
     else { lastCallout = r.callout; setStatus(""); setCallout(r.callout); }
-  } catch (err) { setCallout("문제가 생겼습니다. " + err.message); }
+  } catch (err) { vibrate(200); setCallout("문제가 생겼습니다. " + err.message); }
   finally { busy = false; }
 }
 
 $("nowBtn").onclick = () => look(mode);
-$("stopBtn").onclick = () => speechSynthesis.cancel();
+$("stopBtn").onclick = () => Voice.stop();
 
-for (const btn of document.querySelectorAll(".mode")) btn.onclick = () => {
+$("previewToggleBtn").onclick = () => {
+  const showing = $("previewToggleBtn").getAttribute("aria-pressed") !== "false";
+  const next = !showing;
+  $("previewToggleBtn").setAttribute("aria-pressed", String(next));
+  $("camwrap").hidden = !next;
+  $("previewToggleBtn").textContent = next ? "미리보기 숨기기" : "미리보기 보기";
+};
+
+for (const btn of document.querySelectorAll(".mode")) btn.onclick = async () => {
+  const wantFacing = btn.dataset.mode === "self" ? "user" : "environment";
   mode = btn.dataset.mode;
   for (const other of document.querySelectorAll(".mode")) other.setAttribute("aria-pressed", String(other === btn));
-  setStatus(MODE_GUIDE[mode] + " 방식입니다.", true);
+  if (sessionId && wantFacing !== currentFacing) {
+    try {
+      await openCamera(wantFacing);
+      setStatus((wantFacing === "user" ? "전면 카메라로 바꿨습니다. " : "후면 카메라로 바꿨습니다. ") + MODE_GUIDE[mode], true);
+    } catch (err) {
+      setStatus("카메라 전환에 실패했습니다. 이전 카메라를 계속 사용합니다.", true);
+    }
+  } else {
+    setStatus(MODE_GUIDE[mode] + " 방식입니다.", true);
+  }
 };
 
 $("watchBtn").onclick = () => {
@@ -157,9 +249,10 @@ $("endBtn").onclick = async () => {
   clearInterval(watchTimer); $("watchBtn").setAttribute("aria-pressed", "false");
   for (const track of ($("video").srcObject?.getTracks() || [])) track.stop();
   $("video").srcObject = null;
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
   try { const r = await post("/api/eye/end", { session_id: sessionId }); setCallout(r.deleted ? "끝냈습니다. 샌드박스와 사진을 모두 지웠습니다." : "끝냈습니다."); }
   catch (err) { setCallout("끝내는 중 문제가 생겼습니다. " + err.message); }
-  sessionId = ""; lastCallout = "";
+  sessionId = ""; lastCallout = ""; currentFacing = "environment";
   for (const id of ["nowBtn", "micBtn", "watchBtn", "endBtn"]) $(id).disabled = true;
   $("startBtn").disabled = false;
 };
@@ -167,7 +260,7 @@ $("endBtn").onclick = async () => {
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (!Recognition) $("micBtn").hidden = true;
 else $("micBtn").onclick = () => {
-  speechSynthesis.cancel();
+  Voice.stop();
   const rec = new Recognition(); rec.lang = "ko-KR"; rec.interimResults = false;
   $("micBtn").setAttribute("aria-pressed", "true"); setStatus("듣고 있습니다. 원하는 것을 말씀하세요.");
   rec.onresult = (ev) => { const said = ev.results[0][0].transcript; setStatus("요청: " + said); look(mode, said); };
@@ -184,6 +277,11 @@ document.addEventListener("keydown", (e) => {
 window.addEventListener("pagehide", () => {
   if (sessionId) navigator.sendBeacon("/api/eye/end", new Blob([JSON.stringify({ session_id: sessionId })], { type: "application/json" }));
 });
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => { navigator.serviceWorker.register("/sw.js").catch(() => {}); });
+}
 </script>
 </body>
 </html>

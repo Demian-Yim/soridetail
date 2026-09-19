@@ -5,3 +5,6 @@ __pycache__/
 .workspace/
 .pytest_cache/
 current_state.md
+
+# 음성 안내서 원본(용량 큼) — 저장소에 올리지 않는다
+docs/*.wav

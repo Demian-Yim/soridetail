@@ -75,3 +75,18 @@ def test_look_only_mentions_last_callout_in_watch_mode(monkeypatch):
     vision.look("x", "look", last_callout="아까 안내")
     vision.look("x", "watch", last_callout="아까 안내")
     assert "아까 안내" not in seen[0] and "아까 안내" in seen[1]
+
+
+def test_tts_falls_back_cleanly_when_voice_engine_is_missing(monkeypatch):
+    """자연 음성을 못 쓰면 503 — 화면(voice.js)은 이 신호로 브라우저 음성으로 내려간다."""
+    from fastapi.testclient import TestClient
+
+    from app import main, voice
+
+    def unavailable(text, voice_name):
+        raise voice.VoiceUnavailable("없음")
+
+    monkeypatch.setattr(main.voice, "synthesize_wav", unavailable)
+    client = TestClient(main.app)
+    assert client.post("/api/tts", json={"text": "안내"}).status_code == 503
+    assert client.post("/api/tts", json={"text": ""}).status_code == 422

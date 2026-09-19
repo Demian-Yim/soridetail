@@ -7,6 +7,7 @@ import base64
 import binascii
 import json
 import os
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Literal
@@ -14,11 +15,11 @@ from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import eye_session, vision
+from app import eye_session, vision, voice
 from app.sandbox_runner import collect_page
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -120,7 +121,7 @@ JPEG_MAGIC = bytes.fromhex("ffd8ff")
 class LookRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=100)
     image_b64: str = Field(min_length=100, max_length=4_200_000)
-    mode: Literal["look", "find", "read", "people", "watch"] = "look"
+    mode: Literal["look", "find", "read", "people", "watch", "self"] = "look"
     question: str = Field(default="", max_length=300)
     last_callout: str = Field(default="", max_length=600)
 
@@ -142,6 +143,15 @@ def decode_frame(image_b64: str) -> bytes:
 @app.get("/eye")
 def eye_page():
     return FileResponse(BASE_DIR / "static" / "eye.html")
+
+
+@app.get("/sw.js")
+def service_worker():
+    """서비스워커는 자기 경로 아래만 다룰 수 있어 /static 이 아니라 루트에서 내준다. 없어도 앱은 그대로 동작한다."""
+    path = BASE_DIR / "static" / "sw.js"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="서비스워커가 없습니다.")
+    return FileResponse(path, media_type="application/javascript", headers={"Cache-Control": "no-cache"})
 
 
 @app.post("/api/eye/start")
@@ -195,3 +205,26 @@ def eye_end(req: SessionRequest):
 @app.on_event("shutdown")
 def delete_all_sandboxes():
     eye_session.end_all()
+
+
+# ───────── 자연 음성 (Supertonic 3, 로컬·무료) ─────────
+
+class SpeakRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=voice.MAX_TEXT_CHARS)
+    voice: str = Field(default=voice.DEFAULT_VOICE, max_length=4)
+
+
+@app.post("/api/tts")
+def speak_text(req: SpeakRequest):
+    try:
+        return Response(content=voice.synthesize_wav(req.text, req.voice), media_type="audio/wav")
+    except voice.VoiceUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        print(f"[tts] {type(exc).__name__}: {exc}")
+        raise HTTPException(status_code=502, detail="음성을 만들지 못했습니다.") from exc
+
+
+@app.on_event("startup")
+def warm_up_voice():
+    threading.Thread(target=voice.warm_up, daemon=True).start()
