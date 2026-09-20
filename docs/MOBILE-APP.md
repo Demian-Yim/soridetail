@@ -41,18 +41,24 @@ gcloud run deploy heyvision --source . --region asia-northeast3 --allow-unauthen
 ```
 
 - [검증] Cloud Build 로 이미지 빌드·배포 완료(2026-09-20). 재배포는 위 명령 그대로.
+- ⚠️ **[검증] Daytona API 키가 2026-09-20 01:14(UTC)부터 모든 요청에 401 「Invalid credentials」** — 로컬에서도 같은 키로 실패하므로 서버 설정 문제가 아니라 키 자체가 만료·폐기된 것이다(해커톤 키). 서버는 샌드박스를 못 만들면 **서버 안 점검(where=local)** 으로 내려가 멈추지 않고, `/api/health` 의 `sandbox: error` 로 그 사실을 드러낸다. **새 키를 app.daytona.io → API Keys 에서 발급해 Secret Manager `heyvision-daytona-key` 에 새 버전으로 넣으면 재배포 없이 다음 세션부터 샌드박스로 복귀한다.**
 - [추정] 비용: 시범 규모는 Cloud Run 무료 구간 안에서 시작 가능. 다만 음성 합성이 CPU 를 쓰므로 사용자가 늘면 과금된다. **배포는 돈이 나갈 수 있는 결정이라 정훈님 승인 후 실행한다.**
 - 실사용자에게 열기 전에 Gemini 를 유료 등급으로 전환할 것 — 무료 등급은 전송한 사진이 모델 개선에 쓰일 수 있다 [추정 — 약관 확인 필요].
 - 사용자별 하루 호출 상한과 간단한 로그인(또는 기관 코드)을 붙여 키 남용을 막는다.
 
-### 2단계 — 안드로이드 앱 (플레이스토어)
-웹앱을 그대로 감싸는 방식(TWA). 고정 주소만 있으면 하루 안에 가능하다.
+### 2단계 — 안드로이드 앱 (플레이스토어) — ✅ 패키지 생성 2026-09-20
+웹앱을 그대로 감싸는 방식(TWA). `python scripts/android_package.py <고정 주소>` 한 번으로 PWABuilder 클라우드 빌드를 호출해 아래를 만든다(이 PC 에는 Android SDK 가 없다).
 
-1. https://www.pwabuilder.com 에 고정 주소 입력 → Android 패키지(AAB) 생성
-2. 생성된 서명 지문을 서버 `.env` 의 `ANDROID_ASSETLINKS` 에 넣는다 → `/.well-known/assetlinks.json` 이 자동으로 응답(라우트 구현됨) → 주소창 없이 열린다
-3. 플레이 콘솔 등록(개발자 등록비 25달러 1회) → 내부 테스트 → 공개
+| 파일 (`android/` · git 제외) | 용도 |
+|---|---|
+| `헤이 비전.aab` (1.2MB) | 플레이 콘솔에 올리는 파일 |
+| `헤이 비전.apk` (1.1MB) | 테스트 기기에 직접 설치하는 파일 |
+| `signing.keystore` · `signing-key-info.txt` · `SIGNING-PASSWORDS.txt` | **서명 키 — 잃어버리면 같은 앱으로 업데이트를 못 올린다. 백업 필수, 공유 금지** |
+| `assetlinks.json` | 서명 지문. 서버 환경변수 `ANDROID_ASSETLINKS` 로 주입 → `/.well-known/assetlinks.json` 응답 → 주소창 없이 열림 |
 
-이 PC 에는 Android SDK 가 없어 직접 빌드는 못 한다(자바 21 만 있음). PWABuilder 는 클라우드에서 빌드해 준다.
+패키지 이름 `kr.flowax.heyvision` · 시작 주소 `/eye?source=app` · 세로 고정 · 검정 테마.
+
+남은 절차: ① 안드로이드 폰에 `헤이 비전.apk` 설치해 카메라·음성·주소창 숨김 확인 [미검증] ② 플레이 콘솔 개발자 등록(25달러 1회 — 정훈님 결제) ③ AAB 업로드 → 내부 테스트 → 공개. 데이터 안전 설문에서 "카메라 이미지를 서버로 전송, 저장 안 함"을 정직하게 적는다.
 
 ### 3단계 — 네이티브 앱 (2번 표의 기능이 필요해질 때)
 - 아이폰 앱은 맥과 애플 개발자 계정(연 99달러)이 필요하다. 애플은 웹을 감싸기만 한 앱을 반려하므로 아이폰은 처음부터 네이티브로 간다.
