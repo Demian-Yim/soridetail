@@ -55,7 +55,11 @@ FastAPI
    └── Vision model: Gemini / Claude / OpenAI-compatible (e.g. a Nosana GPU)
 ```
 
-## Run
+## Live
+
+https://heyvision-990911402358.asia-northeast3.run.app — landing at `/`, camera app at `/eye`, SoriDetail at `/detail`. Pilot, free, rate-limited.
+
+## Run locally
 
 ```bash
 pip install -r requirements.txt

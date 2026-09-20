@@ -6,7 +6,7 @@ import pytest
 from fastapi import HTTPException
 from PIL import Image, ImageDraw, ImageFilter
 
-from app import frame_job, vision
+from app import eye_session, frame_job, vision
 from app.main import decode_frame
 
 
@@ -156,3 +156,18 @@ def test_idle_sessions_are_swept_so_abandoned_sandboxes_do_not_keep_billing(monk
     })
     assert eye_session.sweep(now=1000.0 + eye_session.IDLE_SECONDS + 5) == 1
     assert deleted == ["old"] and list(eye_session._sessions) == ["fresh"]
+
+
+def test_start_falls_back_to_local_when_sandbox_creation_fails(monkeypatch):
+    """키가 만료돼 샌드박스를 못 만들어도 502 대신 서버 안 점검으로 내려가고, 그 사실을 숨기지 않는다."""
+    monkeypatch.setenv("DAYTONA_API_KEY", "dtn_expired")
+
+    class BrokenClient:
+        def create(self):
+            raise RuntimeError("Invalid credentials")
+
+    monkeypatch.setattr(eye_session, "_client", lambda: BrokenClient())
+    info = eye_session.start()
+    assert info["where"] == "local" and info["session_id"] == eye_session.LOCAL_SESSION
+    assert "note" in info
+    assert "Invalid credentials" in eye_session.last_sandbox_error

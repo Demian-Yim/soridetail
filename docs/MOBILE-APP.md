@@ -28,8 +28,9 @@
 
 ## 3. 출시 3단계
 
-### 1단계 — 상시 서버 (모든 것의 전제)
-지금 주소는 발표용 임시 터널이라 PC를 끄면 사라진다. 앱으로 포장하려면 **바뀌지 않는 https 주소**가 먼저 있어야 한다.
+### 1단계 — 상시 서버 (모든 것의 전제) — ✅ 2026-09-20 배포
+**고정 주소: https://heyvision-990911402358.asia-northeast3.run.app** (Google Cloud Run · 서울 리전 · 프로젝트 FLOW-AI · 인스턴스 최대 1대 · 키는 Secret Manager).
+발표용 임시 터널은 더 이상 쓰지 않는다. 비용 울타리: 접속 주소별·서비스 전체 하루 호출 상한(`app/limits.py`) + 10분 유휴 세션 자동 삭제.
 
 준비된 것: `Dockerfile`(음성 모델을 이미지에 포함해 첫 실행 지연 없음) · `.dockerignore`(.env 제외) · 시크릿은 실행 시 환경변수로 주입.
 
@@ -39,7 +40,7 @@ gcloud run deploy heyvision --source . --region asia-northeast3 --allow-unauthen
   --memory 2Gi --cpu 2 --timeout 120 --set-env-vars DAYTONA_API_KEY=...,GEMINI_API_KEY=...,CONTACT_EMAIL=...
 ```
 
-- [미검증] 이미지 빌드·배포는 아직 돌려보지 않았다 (이 PC의 Docker Desktop 이 꺼져 있었음).
+- [검증] Cloud Build 로 이미지 빌드·배포 완료(2026-09-20). 재배포는 위 명령 그대로.
 - [추정] 비용: 시범 규모는 Cloud Run 무료 구간 안에서 시작 가능. 다만 음성 합성이 CPU 를 쓰므로 사용자가 늘면 과금된다. **배포는 돈이 나갈 수 있는 결정이라 정훈님 승인 후 실행한다.**
 - 실사용자에게 열기 전에 Gemini 를 유료 등급으로 전환할 것 — 무료 등급은 전송한 사진이 모델 개선에 쓰일 수 있다 [추정 — 약관 확인 필요].
 - 사용자별 하루 호출 상한과 간단한 로그인(또는 기관 코드)을 붙여 키 남용을 막는다.

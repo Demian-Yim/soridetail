@@ -87,7 +87,9 @@ def android_asset_links():
 @app.get("/api/health")
 def health():
     reload_env()
-    return {"daytona_key": bool(os.getenv("DAYTONA_API_KEY")), "vision": vision.provider_name()}
+    return {"daytona_key": bool(os.getenv("DAYTONA_API_KEY")), "vision": vision.provider_name(),
+            "sandbox": "error" if eye_session.last_sandbox_error else "ok",
+            "sandbox_error": eye_session.last_sandbox_error[:200]}
 
 
 @app.post("/api/read")

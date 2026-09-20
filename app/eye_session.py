@@ -4,7 +4,8 @@
 세션 전용 샌드박스 안에서만 점검하고(app/frame_job.py), 세션이 끝나면 샌드박스째 지운다.
 요청마다 샌드박스를 새로 만들면 느리므로 세션 동안 한 대를 계속 쓴다.
 
-DAYTONA_API_KEY 가 없으면 같은 점검 코드를 로컬에서 돌린다(where="local") — 데모가 멈추지 않게.
+DAYTONA_API_KEY 가 없거나, 있어도 샌드박스를 만들지 못하면(키 만료·서비스 장애) 같은 점검 코드를 서버 안에서 돌린다
+(where="local") — 시각장애인 사용자 앞에서 서비스가 멈추지 않게. 그 사실은 응답의 where 와 /api/health 의 sandbox 에 그대로 드러낸다.
 """
 import json
 import os
@@ -25,6 +26,7 @@ IDLE_SECONDS = 600       # 끝내기 없이 탭을 닫은 세션 — 10분 동�
 MAX_SESSIONS = 20        # 동시에 살아 있는 샌드박스 상한
 
 _sessions: dict[str, dict] = {}
+last_sandbox_error = ""   # 마지막으로 샌드박스 생성에 실패한 이유 — /api/health 가 보여 준다
 
 
 def sweep(now: float | None = None) -> int:
@@ -48,7 +50,16 @@ def start() -> dict:
         _reset_local()
         return {"session_id": LOCAL_SESSION, "where": "local", "seconds": 0.0}
 
-    sandbox = _client().create()
+    global last_sandbox_error
+    try:
+        sandbox = _client().create()
+    except Exception as exc:  # 키 만료·할당량·장애 — 사용자 앞에서 502 를 내지 않고 서버 안 점검으로 내려간다
+        last_sandbox_error = f"{type(exc).__name__}: {exc}"
+        print(f"[eye_session] 샌드박스 생성 실패 → 서버 안 점검으로 대체: {last_sandbox_error}")
+        _reset_local()
+        return {"session_id": LOCAL_SESSION, "where": "local", "seconds": round(time.time() - started, 1),
+                "note": "샌드박스를 만들지 못해 서버 안에서 점검합니다."}
+    last_sandbox_error = ""
     try:
         work_dir = sandbox.get_user_home_dir().rstrip("/") + "/eye"
         sandbox.process.exec(f"mkdir -p {shlex.quote(work_dir)}")
