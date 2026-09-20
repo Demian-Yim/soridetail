@@ -1,4 +1,4 @@
-daytona
+daytona==0.214.0   # 로컬에서 실측된 버전으로 고정 — 최신판이 클라우드에서 "Invalid credentials"(2026-09-20)
 fastapi
 uvicorn
 httpx
