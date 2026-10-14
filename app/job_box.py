@@ -413,8 +413,19 @@ def self_check() -> str:
         "import sys\n"
         "server = int(sys.argv[1])\n"
         "def many_files():\n    [open('/tmp/f%d' % i, 'w').close() for i in range(5000)]\n"
-        "print('CHECK server_proc=%s net=%s rootfs=%s tmp40m=%s files5000=%s' % (\n"
-        "    tried(lambda: open('/proc/%d/environ' % server, 'rb').read(1)), tried(net),\n"
+        # 서버 환경이 보이는지는 '서버만 가진 변수 이름'이 어느 /proc/*/environ 에든 나타나는지로 판정한다.
+        # (서버가 1번 프로세스라 새 프로세스 공간의 1번 = 자식 자신이므로 pid 로 열어 보는 것은 의미가 없다)
+        "def server_env():\n"
+        "    import glob\n"
+        "    for path in glob.glob('/proc/[0-9]*/environ'):\n"
+        "        try:\n"
+        "            if b'GEMINI_API_KEY=' in open(path, 'rb').read():\n"
+        "                return\n"
+        "        except Exception:\n"
+        "            pass\n"
+        "    raise PermissionError('not visible')\n"
+        "print('CHECK server_env=%s net=%s rootfs=%s tmp40m=%s files5000=%s' % (\n"
+        "    tried(server_env), tried(net),\n"
         "    tried(root_write), tried(big_tmp), tried(many_files)))\n"
     )
     try:
