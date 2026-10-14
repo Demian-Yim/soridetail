@@ -37,7 +37,7 @@ def test_collect_page_falls_back_to_local_box(monkeypatch):
             '</p><img src="/detail_01.png" alt=""></body></html>').encode("utf-8")
     image = _png(900, 2000)
     monkeypatch.setattr(fetcher, "fetch_bytes",
-                        lambda url, referer=None, limit=None: html if url.endswith("/p/1") else image)
+                        lambda url, referer=None, limit=None, deadline=None: html if url.endswith("/p/1") else image)
     steps = list(sandbox_runner.collect_page("https://shop.example.com/p/1"))
     page = steps[-1]
     assert page["type"] == "page" and page["where"] == "local"
@@ -206,3 +206,40 @@ def test_redirect_to_internal_address_is_refused(monkeypatch):
         lambda request: httpx.Response(302, headers={"location": "http://127.0.0.1/admin"}))
     with pytest.raises(fetcher.UnsafeUrlError):
         fetcher.fetch_bytes("https://shop.example.com/p/1", transport=transport)
+
+
+def test_live_box_count_is_capped(monkeypatch):
+    import pytest
+
+    monkeypatch.setattr(job_box, "SLOT_WAIT_SECONDS", 0.1)
+    boxes = [job_box.LocalBox() for _ in range(job_box.BOX_LIMIT)]
+    try:
+        with pytest.raises(job_box.Busy):
+            job_box.LocalBox()
+    finally:
+        for box in boxes:
+            box.close()
+    job_box.LocalBox().close()          # 닫으면 자리가 돌아온다
+
+
+def test_slow_download_hits_the_total_deadline(monkeypatch):
+    import socket
+    import time as clock
+
+    import httpx
+    import pytest
+
+    monkeypatch.setattr(socket, "getaddrinfo",
+                        lambda host, *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))])
+
+    def trickle():
+        for _ in range(100):
+            clock.sleep(0.05)
+            yield b"x"
+
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, content=trickle()))
+    started = clock.monotonic()
+    with pytest.raises(fetcher.UnsafeUrlError):
+        fetcher.fetch_bytes("https://slow.example.com/img.jpg", transport=transport,
+                            deadline=clock.monotonic() + 0.5)
+    assert clock.monotonic() - started < 3

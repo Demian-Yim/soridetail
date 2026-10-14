@@ -39,8 +39,10 @@ LOCAL_NPROC = 4
 LOCAL_DIR_BYTES = 160_000_000           # sealed 가 아닐 때만 쓰는 감시 상한
 LOCAL_DIR_ENTRIES = 2_000
 OUTPUT_READ_BYTES = 64_000
-LOCAL_SLOTS = 2
+LOCAL_SLOTS = 2                         # 동시에 '실행' 중인 자식 수
+BOX_LIMIT = 3                           # 동시에 '살아 있는' 상자 수 — 3 × 최대 약 184MB 가 2GiB 안에 넉넉히
 SLOT_WAIT_SECONDS = 3
+BOX_INODES = 4096                       # 빈 파일·폴더를 끝없이 만들어 메모리를 채우지 못하게
 DAYTONA_COOLDOWN_SECONDS = 60
 ERROR_TTL_SECONDS = 300
 PROBE_RETRY_SECONDS = 300
@@ -68,9 +70,9 @@ LAUNCHER = (
 SEAL_SCRIPT = (
     "set -e\n"
     "mount -o remount,bind,ro /\n"
-    "mount -t tmpfs -o size=16m,mode=1777,nosuid,nodev tmpfs /tmp\n"
-    "mount -t tmpfs -o size=4m,mode=1777,nosuid,nodev tmpfs /var/tmp\n"
-    "mount -t tmpfs -o size=4m,mode=1777,nosuid,nodev tmpfs /dev/shm\n"
+    "mount -t tmpfs -o size=16m,nr_inodes=256,mode=1777,nosuid,nodev tmpfs /tmp\n"
+    "mount -t tmpfs -o size=4m,nr_inodes=64,mode=1777,nosuid,nodev tmpfs /var/tmp\n"
+    "mount -t tmpfs -o size=4m,nr_inodes=64,mode=1777,nosuid,nodev tmpfs /dev/shm\n"
     "uid=$1; shift\n"
     "exec setpriv --reuid=\"$uid\" --regid=\"$uid\" --clear-groups --no-new-privs "
     "--inh-caps=-all --bounding-set=-all \"$@\"\n"
@@ -92,6 +94,7 @@ class Tainted(RuntimeError):
 
 
 _slots = threading.BoundedSemaphore(LOCAL_SLOTS)
+_boxes = threading.BoundedSemaphore(BOX_LIMIT)
 _state_lock = threading.Lock()
 _error: tuple[float, str] = (0.0, "")
 _daytona_skip_until = 0.0
@@ -185,13 +188,17 @@ class LocalBox:
         mode = isolation_mode()
         if mode is None:
             raise LocalBoxUnavailable("이 서버에서는 격리 프로세스를 만들 수 없습니다.")
+        if not _boxes.acquire(timeout=SLOT_WAIT_SECONDS):
+            raise Busy("지금 요청이 많습니다. 잠시 뒤 다시 시도해 주세요.")
+        self._holds_box = True
         self._mode = mode
         self._uid = _claim_uid() if mode != "process-only" else None
         self._mounted = False
         try:
             if mode == "sealed":
                 self._root = Path(tempfile.mkdtemp(prefix="box_", dir=BOX_BASE))
-                subprocess.run(["mount", "-t", "tmpfs", "-o", f"size={BOX_TMPFS_SIZE},mode=0711,nosuid,nodev",
+                subprocess.run(["mount", "-t", "tmpfs", "-o",
+                                f"size={BOX_TMPFS_SIZE},nr_inodes={BOX_INODES},mode=0711,nosuid,nodev",
                                 "tmpfs", str(self._root)], check=True, capture_output=True, timeout=10)
                 self._mounted = True
             else:
@@ -285,6 +292,9 @@ class LocalBox:
                     _remove_owned_by(self._uid)   # sealed 는 자식의 /tmp 가 따로라 남는 것이 없다
                 with _state_lock:
                     _live_uids.discard(self._uid)
+            if getattr(self, "_holds_box", False):
+                self._holds_box = False
+                _boxes.release()
 
     def _make_dir(self, path: Path) -> None:
         self._check_inside(path, allow_missing=True)
@@ -400,9 +410,12 @@ def self_check() -> str:
         "def net():\n    s = socket.socket(); s.settimeout(2); s.connect(('169.254.169.254', 80))\n"
         "def root_write():\n    open('/srv/app_write_probe', 'w').write('x')\n"
         "def big_tmp():\n    open('/tmp/fill', 'wb').write(b'0' * 40_000_000)\n"
-        "print('CHECK proc=%s net=%s rootfs=%s tmp40m=%s' % (\n"
-        "    tried(lambda: open('/proc/%d/environ' % os.getppid(), 'rb').read(1)), tried(net),\n"
-        "    tried(root_write), tried(big_tmp)))\n"
+        "import sys\n"
+        "server = int(sys.argv[1])\n"
+        "def many_files():\n    [open('/tmp/f%d' % i, 'w').close() for i in range(5000)]\n"
+        "print('CHECK server_proc=%s net=%s rootfs=%s tmp40m=%s files5000=%s' % (\n"
+        "    tried(lambda: open('/proc/%d/environ' % server, 'rb').read(1)), tried(net),\n"
+        "    tried(root_write), tried(big_tmp), tried(many_files)))\n"
     )
     try:
         box = LocalBox()
@@ -410,8 +423,8 @@ def self_check() -> str:
         return "unavailable"
     try:
         box.upload(script.encode(), f"{box.home}/check.py")
-        out = box.run_job([f"{box.home}/check.py"], 20).result
-        return out.split("CHECK ", 1)[1].strip()[:90] if "CHECK " in out else "failed"
+        out = box.run_job([f"{box.home}/check.py", str(os.getpid())], 20).result
+        return out.split("CHECK ", 1)[1].strip()[:120] if "CHECK " in out else "failed"
     finally:
         box.close()
 

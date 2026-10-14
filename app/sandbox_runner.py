@@ -19,6 +19,7 @@ from app import fetcher, job_box
 JOB_SOURCE = Path(__file__).resolve().parent / "sandbox_job.py"
 PARSE_TIMEOUT_SECONDS = 30
 TILE_TIMEOUT_SECONDS = 60
+COLLECT_SECONDS = 90                 # 상세 이미지 전체를 내려받는 시간 예산
 MAX_TOTAL_IMAGE_BYTES = 60_000_000   # 상자 용량(160MB) 안에 넉넉히 들어가게
 
 _client = job_box.make_client   # eye_session 이 쓰는 이름 유지
@@ -103,12 +104,14 @@ def collect_page(url: str):
 
         yield {"type": "progress", "message": f"상세 이미지 {len(page['wanted'])}장을 내려받고 있습니다."}
         downloaded, errors, total = 0, [], 0
+        budget_end = time.monotonic() + COLLECT_SECONDS
         for i, src in enumerate(page["wanted"]):
-            if total >= MAX_TOTAL_IMAGE_BYTES:
-                errors.append("이미지 총량 상한에 도달해 나머지는 읽지 않았습니다.")
+            if total >= MAX_TOTAL_IMAGE_BYTES or time.monotonic() > budget_end:
+                errors.append("이미지 총량·시간 상한에 도달해 나머지는 읽지 않았습니다.")
                 break
             try:
-                data = fetcher.fetch_bytes(src, referer=url, limit=min(fetcher.MAX_IMAGE_BYTES, MAX_TOTAL_IMAGE_BYTES - total))
+                data = fetcher.fetch_bytes(src, referer=url, deadline=budget_end,
+                                           limit=min(fetcher.MAX_IMAGE_BYTES, MAX_TOTAL_IMAGE_BYTES - total))
                 total += len(data)
                 box.upload(data, f"{imgs}/img_{i:02d}.bin")
                 downloaded += 1
