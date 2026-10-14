@@ -73,3 +73,63 @@ def test_local_box_caps_output_and_times_out():
         root = box.root
         box.close()
     assert not root.exists()
+
+
+def _jpeg(shade: int) -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", (640, 480), (shade, shade, shade)).save(buf, "JPEG")
+    return buf.getvalue()
+
+
+def test_camera_frames_are_never_decoded_in_the_server_process(monkeypatch):
+    from app import eye_session, frame_job
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("서버 본체에서 프레임을 디코딩했다")
+
+    monkeypatch.setattr(frame_job, "analyze", forbidden)
+    result = eye_session.check_frame("attacker-chosen-id", _jpeg(128))
+    assert result["where"] == "local" and result["usable"] is True and result["sandbox_id"] == ""
+
+
+def test_local_session_keeps_previous_frame_in_memory_only(monkeypatch):
+    from app import eye_session
+
+    monkeypatch.delenv("DAYTONA_API_KEY", raising=False)
+    info = eye_session.start()
+    try:
+        first = eye_session.check_frame(info["session_id"], _jpeg(120))
+        second = eye_session.check_frame(info["session_id"], _jpeg(120))
+        assert first["changed"] is True and second["changed"] is False
+    finally:
+        assert eye_session.end(info["session_id"]) is True
+
+
+def test_local_box_download_rejects_outside_and_oversized_files(tmp_path):
+    outside = tmp_path / "secret.txt"
+    outside.write_text("x")
+    box = job_box.LocalBox()
+    try:
+        box.upload(b"y" * 100, f"{box.home}/big.bin")
+        try:
+            box.download(str(outside), 10)
+            raise AssertionError("상자 밖 파일을 읽었다")
+        except ValueError:
+            pass
+        try:
+            box.download(f"{box.home}/big.bin", 10)
+            raise AssertionError("상한보다 큰 파일을 읽었다")
+        except ValueError:
+            pass
+        assert box.download(f"{box.home}/big.bin", 100) == b"y" * 100
+    finally:
+        box.close()
+
+
+def test_client_ip_uses_the_hop_cloud_run_appends():
+    from types import SimpleNamespace
+
+    from app import limits
+
+    request = SimpleNamespace(headers={"x-forwarded-for": "1.2.3.4, 203.0.113.9"}, client=None)
+    assert limits.client_ip(request) == "203.0.113.9"

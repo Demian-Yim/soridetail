@@ -31,9 +31,7 @@ GENERIC_FAIL = "페이지를 해석하지 못했습니다."
 
 
 def _read_json(box, path: str) -> dict:
-    raw = box.download(path)
-    if len(raw) > MAX_JSON_BYTES:
-        raise RuntimeError(GENERIC_FAIL)
+    raw = box.download(path, MAX_JSON_BYTES)
     data = json.loads(raw.decode("utf-8", errors="replace"))
     if not isinstance(data, dict):
         raise RuntimeError(GENERIC_FAIL)
@@ -67,12 +65,8 @@ def _clean_tiles(raw: dict) -> tuple[list[str], list[str]]:
 
 
 def _read_tile(box, out: str, name: str) -> bytes:
-    if box.where == "local":   # 이름 검증에 더해, 실제 경로가 작업 폴더 밖(심볼릭 링크 포함)이면 거부
-        path = Path(out) / name
-        if path.is_symlink() or not path.resolve().is_relative_to(Path(out).resolve()):
-            raise RuntimeError(GENERIC_FAIL)
-    data = box.download(f"{out}/{name}")
-    if len(data) > MAX_TILE_BYTES or not data.startswith(bytes.fromhex("ffd8ff")):
+    data = box.download(f"{out}/{name}", MAX_TILE_BYTES)   # 상자 밖·링크·FIFO·과대 파일은 상자가 거부
+    if not data.startswith(bytes.fromhex("ffd8ff")):
         raise RuntimeError(GENERIC_FAIL)
     return data
 
@@ -93,7 +87,7 @@ def collect_page(url: str):
     html = fetcher.fetch_bytes(url)
 
     yield {"type": "progress", "message": "안전한 샌드박스 컴퓨터를 준비하고 있습니다."}
-    box = job_box.open_box()
+    box = job_box.open_box(network=False)
     try:
         home = box.home
         job, out, imgs = f"{home}/job.py", f"{home}/out", f"{home}/imgs"

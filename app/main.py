@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app import eye_session, job_box, limits, vision, voice
+from app.fetcher import UnsafeUrlError
 from app.sandbox_runner import collect_page
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -51,6 +52,23 @@ def validate_url(url: str) -> str:
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise HTTPException(status_code=400, detail="http 또는 https 로 시작하는 주소를 입력해 주세요.")
     return url.strip()
+
+
+def user_message(exc: Exception, fallback: str) -> str:
+    """사용자에게 보여 줄 문장. 우리가 쓴 안내문만 그대로 보이고, 나머지 오류 원문(경로·외부 응답)은 숨긴다."""
+    if isinstance(exc, (UnsafeUrlError, job_box.Busy)):
+        return str(exc)
+    if isinstance(exc, RuntimeError) and str(exc) in KNOWN_MESSAGES:
+        return str(exc)
+    return fallback
+
+
+def http_error(exc: Exception, fallback: str) -> HTTPException:
+    status = 503 if isinstance(exc, job_box.Busy) else 502
+    return HTTPException(status_code=status, detail=user_message(exc, fallback))
+
+
+KNOWN_MESSAGES = {"지금 이용자가 많습니다. 잠시 뒤 다시 시도해 주세요.", "페이지를 해석하지 못했습니다."}
 
 
 def event(kind: str, **data) -> str:
@@ -87,8 +105,7 @@ def android_asset_links():
 @app.get("/api/health")
 def health():
     reload_env()
-    return {"daytona_key": bool(os.getenv("DAYTONA_API_KEY")), "vision": vision.provider_name(),
-            **job_box.sandbox_status()}
+    return {"ready": vision.provider_name() != "none", "sandbox": job_box.public_status()}
 
 
 @app.post("/api/read")
@@ -123,7 +140,7 @@ def read_page(req: ReadRequest, request: Request):
             )
         except Exception as exc:  # 사용자에게는 쉬운 말로, 서버 로그에는 원문으로
             print(f"[read_page] {type(exc).__name__}: {exc}")
-            yield event("error", message=f"읽는 중 문제가 생겼습니다. {exc}")
+            yield event("error", message=user_message(exc, "읽는 중 문제가 생겼습니다. 다른 상품 페이지로 다시 시도해 주세요."))
 
     return StreamingResponse(stream(), media_type="application/x-ndjson")
 
@@ -188,7 +205,7 @@ def eye_start(request: Request):
         return eye_session.start()
     except Exception as exc:
         print(f"[eye_start] {type(exc).__name__}: {exc}")
-        raise HTTPException(status_code=502, detail=f"샌드박스를 준비하지 못했습니다. {exc}") from exc
+        raise http_error(exc, "카메라 안내를 시작하지 못했습니다. 잠시 뒤 다시 시도해 주세요.") from exc
 
 
 @app.post("/api/eye/look")
@@ -214,7 +231,7 @@ def eye_look(req: LookRequest, request: Request):
         raise
     except Exception as exc:
         print(f"[eye_look] {type(exc).__name__}: {exc}")
-        raise HTTPException(status_code=502, detail=f"장면을 읽는 중 문제가 생겼습니다. {exc}") from exc
+        raise http_error(exc, "장면을 읽는 중 문제가 생겼습니다. 다시 눌러 주세요.") from exc
 
     silent = callout.strip() == vision.NO_CHANGE and not quality["hints"]
     spoken = "" if callout.strip() == vision.NO_CHANGE else callout
@@ -272,3 +289,13 @@ def speak_text(req: SpeakRequest, request: Request):
 @app.on_event("startup")
 def warm_up_voice():
     threading.Thread(target=voice.warm_up, daemon=True).start()
+
+
+@app.on_event("startup")
+def log_isolation():
+    def check() -> None:
+        try:
+            print(f"[isolation] mode={job_box.isolation_mode()} check={job_box.self_check()}")
+        except Exception as exc:
+            print(f"[isolation] 자가 점검 실패: {type(exc).__name__}: {exc}")
+    threading.Thread(target=check, daemon=True).start()

@@ -9,6 +9,7 @@
 """
 import hashlib
 import json
+import warnings
 import os
 import re
 import sys
@@ -96,6 +97,7 @@ def slice_image(path, out_dir, start_index):
     from PIL import Image
 
     Image.MAX_IMAGE_PIXELS = 60_000_000   # 상세 이미지는 세로로 길다(1000×20000 정도). 그 이상은 압축 폭탄으로 본다
+    warnings.simplefilter("error", Image.DecompressionBombWarning)
     tiles = []
     with Image.open(path, formats=["JPEG", "PNG", "WEBP", "GIF"]) as im:
         im = im.convert("RGB")

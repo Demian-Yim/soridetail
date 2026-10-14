@@ -28,6 +28,15 @@ MESSAGES = {
 }
 
 _lock = threading.Lock()
+_hops_logged = False
+
+
+def _is_private(value: str) -> bool:
+    import ipaddress
+    try:
+        return ipaddress.ip_address(value).is_private
+    except ValueError:
+        return False
 _recent: dict[tuple[str, str], deque] = defaultdict(deque)   # (이름, ip) → 최근 1분의 시각들
 _daily: dict[tuple[str, str], list] = {}                       # (이름, ip 또는 "*") → [날짜 시작 시각, 횟수]
 
@@ -40,10 +49,15 @@ def limits_for(name: str) -> tuple[int, int, int]:
 
 
 def client_ip(request: Request) -> str:
-    """Cloud Run·터널 뒤에서는 실제 접속 주소가 X-Forwarded-For 의 첫 값에 온다."""
+    """Cloud Run 은 실제 접속 주소를 X-Forwarded-For 맨 뒤에 붙인다. 앞쪽 값은 사용자가 꾸며 넣을 수 있다."""
+    global _hops_logged
     forwarded = request.headers.get("x-forwarded-for", "")
     if forwarded:
-        return forwarded.split(",")[0].strip()[:64]
+        hops = [h.strip() for h in forwarded.split(",")]
+        if not _hops_logged:   # 배포 환경의 헤더 모양을 한 번만 기록한다(주소 자체는 남기지 않는다)
+            _hops_logged = True
+            print(f"[limits] x-forwarded-for hops={len(hops)} last_private={_is_private(hops[-1])}")
+        return hops[-1][:64]
     return request.client.host if request.client else "unknown"
 
 

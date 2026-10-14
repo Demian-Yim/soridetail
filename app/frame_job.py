@@ -7,6 +7,7 @@
 사용: python frame_job.py <frame.jpg> <prev.jpg>   (결과는 표준출력 한 줄: FRAME_OK {json})
 """
 import json
+import warnings
 import os
 import shutil
 import sys
@@ -14,6 +15,7 @@ import sys
 from PIL import Image, ImageChops, ImageFilter, ImageStat
 
 Image.MAX_IMAGE_PIXELS = 30_000_000   # 압축 폭탄 차단 (휴대폰 사진은 1,200만 화소 안팎)
+warnings.simplefilter("error", Image.DecompressionBombWarning)
 FRAME_FORMATS = ["JPEG"]            # 카메라 프레임은 JPEG 만 — 다른 디코더는 열지 않는다
 
 DARK_LUMA = 40            # 평균 밝기(0~255)가 이보다 낮으면 렌즈가 가려졌거나 너무 어둡다

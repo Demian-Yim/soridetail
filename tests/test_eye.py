@@ -111,7 +111,7 @@ def test_rate_limit_blocks_a_burst_per_ip_but_not_other_ips(monkeypatch):
     from app import limits
 
     def visitor(ip: str):
-        return SimpleNamespace(headers={"x-forwarded-for": f"{ip}, 10.0.0.1"}, client=None)
+        return SimpleNamespace(headers={"x-forwarded-for": f"9.9.9.9, {ip}"}, client=None)  # 앞 값은 꾸밀 수 있다
 
     limits.reset()
     monkeypatch.setenv("LIMIT_LOOK_PER_MIN", "3")
@@ -166,9 +166,12 @@ def test_start_falls_back_to_local_when_sandbox_creation_fails(monkeypatch):
         def create(self):
             raise RuntimeError("Invalid credentials")
 
-    monkeypatch.setattr(eye_session, "_client", lambda: BrokenClient())
+    monkeypatch.setattr(job_box, "make_client", lambda: BrokenClient())
+    monkeypatch.setattr(job_box, "_daytona_skip_until", 0.0)
     info = eye_session.start()
-    assert info["where"] == "local" and info["session_id"] == eye_session.LOCAL_SESSION
+    assert info["where"] == "local" and info["session_id"].startswith("local-")
     assert "note" in info
-    assert job_box.sandbox_status()["sandbox_error"] == "RuntimeError"
+    assert job_box.public_status() == "fallback"
+    eye_session.end(info["session_id"])
     job_box.record_error(None)
+    monkeypatch.setattr(job_box, "_daytona_skip_until", 0.0)

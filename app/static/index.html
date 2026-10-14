@@ -86,11 +86,9 @@ let lastAnswer = "";
 async function checkReady() {
   try {
     const s = await (await fetch("/api/health")).json();
-    const daytona = s.daytona_key ? "Daytona 키 확인됨" : "Daytona 키 없음 (.env 를 저장하세요)";
-    const vision = s.vision === "none" ? "이미지 읽기 AI 키 없음" : "이미지 읽기 AI: " + s.vision;
-    const ok = s.daytona_key && s.vision !== "none";
-    $("ready").textContent = (ok ? "준비 완료 · " : "준비 안 됨 · ") + daytona + " · " + vision;
-    $("ready").style.color = ok ? "var(--ok)" : "var(--accent)";
+    const where = s.sandbox === "daytona" ? "격리 샌드박스에서 해석" : "서버 격리 프로세스에서 해석";
+    $("ready").textContent = (s.ready ? "준비 완료 · " : "준비 안 됨 · 이미지 읽기 AI 키 없음 · ") + where;
+    $("ready").style.color = s.ready ? "var(--ok)" : "var(--accent)";
   } catch {
     $("ready").textContent = "서버에 연결하지 못했습니다.";
   }
