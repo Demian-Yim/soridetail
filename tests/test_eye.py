@@ -6,7 +6,7 @@ import pytest
 from fastapi import HTTPException
 from PIL import Image, ImageDraw, ImageFilter
 
-from app import eye_session, frame_job, vision
+from app import eye_session, frame_job, job_box, vision
 from app.main import decode_frame
 
 
@@ -170,4 +170,5 @@ def test_start_falls_back_to_local_when_sandbox_creation_fails(monkeypatch):
     info = eye_session.start()
     assert info["where"] == "local" and info["session_id"] == eye_session.LOCAL_SESSION
     assert "note" in info
-    assert "Invalid credentials" in eye_session.last_sandbox_error
+    assert job_box.sandbox_status()["sandbox_error"] == "RuntimeError"
+    job_box.record_error(None)

@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 from app import frame_job
+from app import job_box
 from app.sandbox_runner import _client
 
 JOB_SOURCE = Path(__file__).resolve().parent / "frame_job.py"
@@ -26,7 +27,6 @@ IDLE_SECONDS = 600       # 끝내기 없이 탭을 닫은 세션 — 10분 동�
 MAX_SESSIONS = 20        # 동시에 살아 있는 샌드박스 상한
 
 _sessions: dict[str, dict] = {}
-last_sandbox_error = ""   # 마지막으로 샌드박스 생성에 실패한 이유 — /api/health 가 보여 준다
 
 
 def sweep(now: float | None = None) -> int:
@@ -50,16 +50,15 @@ def start() -> dict:
         _reset_local()
         return {"session_id": LOCAL_SESSION, "where": "local", "seconds": 0.0}
 
-    global last_sandbox_error
     try:
         sandbox = _client().create()
     except Exception as exc:  # 키 만료·할당량·장애 — 사용자 앞에서 502 를 내지 않고 서버 안 점검으로 내려간다
-        last_sandbox_error = f"{type(exc).__name__}: {exc}"
-        print(f"[eye_session] 샌드박스 생성 실패 → 서버 안 점검으로 대체: {last_sandbox_error}")
+        job_box.record_error(exc)
+        print(f"[eye_session] 샌드박스 생성 실패 → 서버 안 점검으로 대체: {type(exc).__name__}: {exc}")
         _reset_local()
         return {"session_id": LOCAL_SESSION, "where": "local", "seconds": round(time.time() - started, 1),
                 "note": "샌드박스를 만들지 못해 서버 안에서 점검합니다."}
-    last_sandbox_error = ""
+    job_box.record_error(None)
     try:
         work_dir = sandbox.get_user_home_dir().rstrip("/") + "/eye"
         sandbox.process.exec(f"mkdir -p {shlex.quote(work_dir)}")

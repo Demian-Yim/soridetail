@@ -95,8 +95,9 @@ def slice_image(path, out_dir, start_index):
     """세로로 긴 상세 이미지를 비전 모델이 글자를 읽을 수 있는 크기의 타일로 자른다."""
     from PIL import Image
 
+    Image.MAX_IMAGE_PIXELS = 60_000_000   # 상세 이미지는 세로로 길다(1000×20000 정도). 그 이상은 압축 폭탄으로 본다
     tiles = []
-    with Image.open(path) as im:
+    with Image.open(path, formats=["JPEG", "PNG", "WEBP", "GIF"]) as im:
         im = im.convert("RGB")
         w, h = im.size
         if min(w, h) < MIN_IMAGE_SIDE:

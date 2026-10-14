@@ -13,6 +13,9 @@ import sys
 
 from PIL import Image, ImageChops, ImageFilter, ImageStat
 
+Image.MAX_IMAGE_PIXELS = 30_000_000   # 압축 폭탄 차단 (휴대폰 사진은 1,200만 화소 안팎)
+FRAME_FORMATS = ["JPEG"]            # 카메라 프레임은 JPEG 만 — 다른 디코더는 열지 않는다
+
 DARK_LUMA = 40            # 평균 밝기(0~255)가 이보다 낮으면 렌즈가 가려졌거나 너무 어둡다
 BRIGHT_LUMA = 235
 BLUR_EDGE_STDDEV = 6.0    # 윤곽선 필터 표준편차가 이보다 낮으면 흔들린 화면
@@ -27,7 +30,7 @@ HINT_BLUR = "화면이 흔들렸습니다. 잠시 멈추고 다시 비춰 주세
 
 
 def analyze(frame_path: str, prev_path: str | None = None) -> dict:
-    with Image.open(frame_path) as im:
+    with Image.open(frame_path, formats=FRAME_FORMATS) as im:
         if max(im.size) > MAX_SIDE:
             raise ValueError("이미지가 너무 큽니다.")
         gray = im.convert("L")
@@ -39,7 +42,7 @@ def analyze(frame_path: str, prev_path: str | None = None) -> dict:
 
     change = None
     if prev_path and os.path.exists(prev_path):
-        with Image.open(prev_path) as prev:
+        with Image.open(prev_path, formats=FRAME_FORMATS) as prev:
             diff = ImageChops.difference(gray.resize(COMPARE_SIZE), prev.convert("L").resize(COMPARE_SIZE))
         change = ImageStat.Stat(diff).mean[0]
 

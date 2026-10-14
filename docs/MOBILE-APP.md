@@ -41,7 +41,7 @@ gcloud run deploy heyvision --source . --region asia-northeast3 --allow-unauthen
 ```
 
 - [검증] Cloud Build 로 이미지 빌드·배포 완료(2026-09-20). 재배포는 위 명령 그대로.
-- ⚠️ **[검증] Daytona API 키가 2026-09-20 01:14(UTC)부터 모든 요청에 401 「Invalid credentials」** — 로컬에서도 같은 키로 실패하므로 서버 설정 문제가 아니라 키 자체가 만료·폐기된 것이다(해커톤 키). 서버는 샌드박스를 못 만들면 **서버 안 점검(where=local)** 으로 내려가 멈추지 않고, `/api/health` 의 `sandbox: error` 로 그 사실을 드러낸다. **새 키를 app.daytona.io → API Keys 에서 발급해 Secret Manager `heyvision-daytona-key` 에 새 버전으로 넣으면 재배포 없이 다음 세션부터 샌드박스로 복귀한다.**
+- ⚠️ **[검증] Daytona API 키 만료(2026-09-20부터, 2026-10-15 재확인 401).** 새 키는 **필수가 아니다** — 2026-10-15부터 카메라 앱과 소리상세 모두 샌드박스를 못 만들면 **서버 안 격리 프로세스**(`app/job_box.py`: 빈 임시 폴더·환경변수 전부 제거·메모리/CPU/시간 상한·끝나면 삭제)로 대체해 멈추지 않는다. 응답의 `where`(daytona/local)와 `/api/health` 의 `sandbox` 로 어느 쪽이 쓰였는지 드러난다. 새 키가 생기면 Secret Manager `heyvision-daytona-key` 에 새 버전만 넣으면 재배포 없이 다음 요청부터 샌드박스로 돌아간다. **차이:** Daytona 는 인터넷이 막힌 별도 컴퓨터, 대체 상자는 같은 서버 안 별도 프로세스 — 해커톤 발표의 '보안 경계' 설명은 Daytona 기준이다.
 - [추정] 비용: 시범 규모는 Cloud Run 무료 구간 안에서 시작 가능. 다만 음성 합성이 CPU 를 쓰므로 사용자가 늘면 과금된다. **배포는 돈이 나갈 수 있는 결정이라 정훈님 승인 후 실행한다.**
 - 실사용자에게 열기 전에 Gemini 를 유료 등급으로 전환할 것 — 무료 등급은 전송한 사진이 모델 개선에 쓰일 수 있다 [추정 — 약관 확인 필요].
 - 사용자별 하루 호출 상한과 간단한 로그인(또는 기관 코드)을 붙여 키 남용을 막는다.

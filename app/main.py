@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import eye_session, limits, vision, voice
+from app import eye_session, job_box, limits, vision, voice
 from app.sandbox_runner import collect_page
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -88,8 +88,7 @@ def android_asset_links():
 def health():
     reload_env()
     return {"daytona_key": bool(os.getenv("DAYTONA_API_KEY")), "vision": vision.provider_name(),
-            "sandbox": "error" if eye_session.last_sandbox_error else "ok",
-            "sandbox_error": eye_session.last_sandbox_error[:200]}
+            **job_box.sandbox_status()}
 
 
 @app.post("/api/read")
@@ -118,6 +117,7 @@ def read_page(req: ReadRequest, request: Request):
                     "images_without_alt": page["image_alts_missing"],
                     "tiles_read": len(page["tiles_b64"]),
                     "sandbox_id": page["sandbox_id"],
+                    "where": page.get("where", "daytona"),
                     "sandbox_seconds": page["sandbox_seconds"],
                 },
             )
