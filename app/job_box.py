@@ -78,7 +78,8 @@ SEAL_SCRIPT = (
     "--inh-caps=-all --bounding-set=-all \"$@\"\n"
 )
 
-KILL_ALL_OF_MY_UID = "import os, signal\ntry:\n os.kill(-1, signal.SIGKILL)\nexcept ProcessLookupError:\n pass\n"
+# 그 uid 의 프로세스를 모두 끝낸다. 셸 내장 kill 이라 파이썬 기동(부하 시 수 초)을 기다리지 않는다.
+KILL_ALL_OF_MY_UID = ["sh", "-c", "kill -9 -1 2>/dev/null; exit 0"]
 
 
 class LocalBoxUnavailable(RuntimeError):
@@ -315,13 +316,17 @@ class LocalBox:
     def _kill_uid(self, strict: bool) -> None:
         if self._uid is None:
             return
-        try:
-            subprocess.run([sys.executable, "-I", "-c", KILL_ALL_OF_MY_UID], env=_clean_env(), timeout=10,
-                           user=self._uid, group=self._uid, extra_groups=[], capture_output=True, check=False)
-        except (OSError, subprocess.SubprocessError) as exc:
-            print(f"[job_box] uid {self._uid} 프로세스 정리 실패: {exc}")
-            if strict:
-                raise Tainted("작업을 안전하게 끝내지 못했습니다.") from exc
+        last_error = None
+        for _attempt in range(2):
+            try:
+                subprocess.run(KILL_ALL_OF_MY_UID, env=_clean_env(), timeout=15, user=self._uid, group=self._uid,
+                               extra_groups=[], capture_output=True, check=False)
+                return
+            except (OSError, subprocess.SubprocessError) as exc:
+                last_error = exc
+        print(f"[job_box] uid {self._uid} 프로세스 정리 실패: {last_error}")
+        if strict:
+            raise Tainted("작업을 안전하게 끝내지 못했습니다.") from last_error
 
 
 def delete_quietly(sandbox) -> None:
