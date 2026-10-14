@@ -32,7 +32,7 @@ from daytona import CreateSandboxFromSnapshotParams, Daytona, DaytonaConfig
 
 BOX_BASE = "/srv/boxes"                 # Dockerfile 이 만든다(리눅스)
 BOX_TMPFS_SIZE = "160m"                 # 상자 하나가 쓸 수 있는 최대 용량(입력 포함)
-LOCAL_MEMORY_BYTES = 512_000_000
+LOCAL_MEMORY_BYTES = 400_000_000   # 실행 2개 × 400MB + 상자 3 × 184MB + 서버 본체가 2GiB 안에
 LOCAL_CPU_SECONDS = 60
 LOCAL_FILE_BYTES = 8_000_000            # 자식이 만드는 파일 1개 상한(타일·결과·프레임 사본)
 LOCAL_NPROC = 4
@@ -73,7 +73,9 @@ SEAL_SCRIPT = (
     "mount -t tmpfs -o size=16m,nr_inodes=256,mode=1777,nosuid,nodev tmpfs /tmp\n"
     "mount -t tmpfs -o size=4m,nr_inodes=64,mode=1777,nosuid,nodev tmpfs /var/tmp\n"
     "mount -t tmpfs -o size=4m,nr_inodes=64,mode=1777,nosuid,nodev tmpfs /dev/shm\n"
-    "uid=$1; shift\n"
+    "uid=$1; box=$2; shift 2\n"
+    # 다른 상자의 tmpfs 는 이 네임스페이스에서 떼어 낸다 — 서버가 지운 상자의 메모리를 붙잡지 않게
+    "for m in /srv/boxes/box_*; do [ \"$m\" = \"$box\" ] || umount -l \"$m\" 2>/dev/null || true; done\n"
     "exec setpriv --reuid=\"$uid\" --regid=\"$uid\" --clear-groups --no-new-privs "
     "--inh-caps=-all --bounding-set=-all \"$@\"\n"
 )
@@ -194,14 +196,14 @@ class LocalBox:
         self._holds_box = True
         self._mode = mode
         self._uid = _claim_uid() if mode != "process-only" else None
-        self._mounted = False
+        self._mount_attempted = False
         try:
             if mode == "sealed":
                 self._root = Path(tempfile.mkdtemp(prefix="box_", dir=BOX_BASE))
+                self._mount_attempted = True
                 subprocess.run(["mount", "-t", "tmpfs", "-o",
                                 f"size={BOX_TMPFS_SIZE},nr_inodes={BOX_INODES},mode=0711,nosuid,nodev",
                                 "tmpfs", str(self._root)], check=True, capture_output=True, timeout=10)
-                self._mounted = True
             else:
                 self._root = Path(tempfile.mkdtemp(prefix="sori_job_"))
                 if self._uid is not None:
@@ -253,7 +255,7 @@ class LocalBox:
 
     def _run(self, args: list[str], timeout: int) -> RunResult:
         out_path = self._root / ".job_output"        # 자식이 쓸 수 없는 root 소유 폴더에 둔다(바꿔치기 불가)
-        cmd, kwargs = _command(self._mode, self._uid, [sys.executable, "-I", "-c", LAUNCHER, *args])
+        cmd, kwargs = _command(self._mode, self._uid, [sys.executable, "-I", "-c", LAUNCHER, *args], str(self._root))
         deadline, code, reason = time.time() + timeout, None, ""
         fd = os.open(out_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
         try:
@@ -278,24 +280,38 @@ class LocalBox:
         return RunResult(code, _safe_read(out_path, OUTPUT_READ_BYTES, None, truncate=True).decode("utf-8", "replace"))
 
     def close(self) -> None:
+        """어느 단계가 실패해도 상자 자리(semaphore)와 uid 는 반드시 돌려준다."""
         try:
-            self._kill_uid(strict=False)
+            for step in (lambda: self._kill_uid(strict=False), self._release_storage, self._release_uid):
+                try:
+                    step()
+                except Exception as exc:
+                    print(f"[job_box] 상자 정리 중 오류(계속 진행): {type(exc).__name__}: {exc}")
         finally:
-            root = getattr(self, "_root", None)
-            if root is not None:
-                if self._mounted:
-                    subprocess.run(["umount", "-l", str(root)], capture_output=True, timeout=10)
-                shutil.rmtree(root, ignore_errors=True)
-                if root.exists():
-                    print(f"[job_box] 임시 폴더를 다 지우지 못함: {root}")
-            if self._uid is not None:
-                if self._mode != "sealed":
-                    _remove_owned_by(self._uid)   # sealed 는 자식의 /tmp 가 따로라 남는 것이 없다
-                with _state_lock:
-                    _live_uids.discard(self._uid)
             if getattr(self, "_holds_box", False):
                 self._holds_box = False
                 _boxes.release()
+
+    def _release_storage(self) -> None:
+        root = getattr(self, "_root", None)
+        if root is None:
+            return
+        if getattr(self, "_mount_attempted", False):   # mount 가 시간 초과로 끝났어도 붙어 있을 수 있다
+            try:
+                subprocess.run(["umount", "-l", str(root)], capture_output=True, timeout=10)
+            except (OSError, subprocess.SubprocessError) as exc:
+                print(f"[job_box] umount 실패: {exc}")
+        shutil.rmtree(root, ignore_errors=True)
+        if root.exists():
+            print(f"[job_box] 임시 폴더를 다 지우지 못함: {root}")
+
+    def _release_uid(self) -> None:
+        if self._uid is None:
+            return
+        if self._mode != "sealed":
+            _remove_owned_by(self._uid)   # sealed 는 자식의 /tmp 가 따로라 남는 것이 없다
+        with _state_lock:
+            _live_uids.discard(self._uid)
 
     def _make_dir(self, path: Path) -> None:
         self._check_inside(path, allow_missing=True)
@@ -383,7 +399,7 @@ def _probe_sealed() -> bool:
                                  capture_output=True, timeout=10).returncode == 0
         if not mounted:
             return False
-        cmd, kwargs = _command("sealed", UID_RANGE[0] - 1, ["true"])
+        cmd, kwargs = _command("sealed", UID_RANGE[0] - 1, ["true"], str(probe))
         return subprocess.run(cmd, env=_clean_env(), capture_output=True, timeout=10, **kwargs).returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
@@ -393,10 +409,10 @@ def _probe_sealed() -> bool:
         shutil.rmtree(probe, ignore_errors=True)
 
 
-def _command(mode: str, uid: int | None, argv: list[str]) -> tuple[list[str], dict]:
+def _command(mode: str, uid: int | None, argv: list[str], box: str = "") -> tuple[list[str], dict]:
     if mode == "sealed":
         return ["unshare", "-n", "-m", "-p", "--fork", "--mount-proc", "--propagation", "private",
-                "sh", "-c", SEAL_SCRIPT, "seal", str(uid), *argv], {}
+                "sh", "-c", SEAL_SCRIPT, "seal", str(uid), box, *argv], {}
     if mode == "netns-setpriv":
         return ["unshare", "-n", "setpriv", f"--reuid={uid}", f"--regid={uid}", "--clear-groups",
                 "--no-new-privs", "--inh-caps=-all", "--bounding-set=-all", *argv], {}

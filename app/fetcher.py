@@ -3,6 +3,8 @@
 해석은 전부 Daytona 샌드박스가 맡는다. 여기서 하는 일은 SSRF 차단과 바이트 수집뿐이다.
 """
 import ipaddress
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 import socket
 import time
 from urllib.parse import quote, urlparse
@@ -27,6 +29,8 @@ def to_ascii_url(url: str) -> str:
 
 
 MAX_REDIRECTS = 5
+DNS_SECONDS = 5
+_DNS = ThreadPoolExecutor(max_workers=4, thread_name_prefix="dns")   # getaddrinfo 에는 시간 제한이 없다
 
 
 def _is_public(ip) -> bool:
@@ -39,9 +43,11 @@ def assert_public_url(url: str) -> None:
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise UnsafeUrlError("http 또는 https 주소만 열 수 있습니다.")
     try:
-        infos = socket.getaddrinfo(parsed.hostname, None)
+        infos = _DNS.submit(socket.getaddrinfo, parsed.hostname, None).result(timeout=DNS_SECONDS)
     except socket.gaierror as exc:
         raise UnsafeUrlError("주소를 찾을 수 없습니다.") from exc
+    except FutureTimeout as exc:
+        raise UnsafeUrlError("주소를 찾는 데 시간이 너무 오래 걸립니다.") from exc
     for info in infos:
         if not _is_public(ipaddress.ip_address(info[4][0])):
             raise UnsafeUrlError("내부 네트워크 주소는 열 수 없습니다.")
@@ -79,13 +85,12 @@ def fetch_bytes(url: str, referer: str | None = None, limit: int = MAX_HTML_BYTE
                     current = to_ascii_url(str(res.url.join(location)))
                     continue
                 res.raise_for_status()
-                chunks, total = [], 0
+                body = bytearray()                 # 사본 없이 한 버퍼에 모은다
                 for chunk in res.iter_bytes():
                     if time.monotonic() > deadline:
                         raise UnsafeUrlError("내려받는 데 시간이 너무 오래 걸립니다.")
-                    chunks.append(chunk)
-                    total += len(chunk)
-                    if total >= limit:
+                    body += chunk[: limit - len(body)]
+                    if len(body) >= limit:
                         break
-                return b"".join(chunks)[:limit]
+                return bytes(body)
     raise UnsafeUrlError("리다이렉트가 너무 많습니다.")

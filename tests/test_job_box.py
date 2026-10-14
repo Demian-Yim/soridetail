@@ -243,3 +243,29 @@ def test_slow_download_hits_the_total_deadline(monkeypatch):
         fetcher.fetch_bytes("https://slow.example.com/img.jpg", transport=transport,
                             deadline=clock.monotonic() + 0.5)
     assert clock.monotonic() - started < 3
+
+
+def test_box_slot_comes_back_even_if_cleanup_steps_fail(monkeypatch):
+    monkeypatch.setattr(job_box, "SLOT_WAIT_SECONDS", 0.1)
+    for _ in range(job_box.BOX_LIMIT + 2):           # 자리가 새면 BOX_LIMIT 번째 이후 Busy 가 난다
+        box = job_box.LocalBox()
+
+        def broken():
+            raise OSError("umount timed out")
+
+        box._release_storage = broken
+        box.close()
+    job_box.LocalBox().close()
+
+
+def test_concurrent_page_reads_are_capped(monkeypatch):
+    import pytest
+
+    held = [sandbox_runner._reads.acquire(blocking=False) for _ in range(sandbox_runner.READ_LIMIT)]
+    try:
+        with pytest.raises(job_box.Busy):
+            next(sandbox_runner.collect_page("https://shop.example.com/p/1"))
+    finally:
+        for ok in held:
+            if ok:
+                sandbox_runner._reads.release()

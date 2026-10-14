@@ -11,6 +11,7 @@
 import base64
 import json
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -19,6 +20,8 @@ from app import fetcher, job_box
 JOB_SOURCE = Path(__file__).resolve().parent / "sandbox_job.py"
 PARSE_TIMEOUT_SECONDS = 30
 TILE_TIMEOUT_SECONDS = 60
+READ_LIMIT = 4                       # 동시에 처리하는 상품 페이지 수 — 느린 서버로 스레드를 묶어 두지 못하게
+_reads = threading.BoundedSemaphore(READ_LIMIT)
 COLLECT_SECONDS = 90                 # 상세 이미지 전체를 내려받는 시간 예산
 MAX_TOTAL_IMAGE_BYTES = 60_000_000   # 상자 용량(160MB) 안에 넉넉히 들어가게
 
@@ -84,6 +87,15 @@ def _run(box, args: list[str], marker: str, timeout: int) -> str:
 
 def collect_page(url: str):
     """진행 이벤트를 차례로 내보내고, 마지막에 수집 결과(dict)를 내보낸다."""
+    if not _reads.acquire(blocking=False):
+        raise job_box.Busy("지금 요청이 많습니다. 잠시 뒤 다시 시도해 주세요.")
+    try:
+        yield from _collect(url)
+    finally:
+        _reads.release()
+
+
+def _collect(url: str):
     started = time.time()
 
     yield {"type": "progress", "message": "페이지를 내려받고 있습니다."}
