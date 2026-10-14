@@ -344,7 +344,7 @@ function vibrate(pattern) { if ("vibrate" in navigator) { try { navigator.vibrat
 async function post(path, body) {
   const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || "요청이 거절되었습니다.");
+  if (!res.ok) { const e = new Error(data.detail || "요청이 거절되었습니다."); e.status = res.status; throw e; }
   return data;
 }
 
@@ -468,12 +468,18 @@ async function doNow(requestMode, question = "") {
   const startedTs = performance.now();
   if (requestMode !== "watch") setStatus("보고 있습니다.");
   try {
-    const r = await post("/api/eye/look", {
-      session_id: sessionId, image_b64: grabFrame(), mode: requestMode, question, last_callout: lastCallout
-    });
+    const body = () => ({ session_id: sessionId, image_b64: grabFrame(), mode: requestMode, question, last_callout: lastCallout });
+    let r;
+    try {
+      r = await post("/api/eye/look", body());
+    } catch (err) {
+      if (err.status !== 404) throw err;
+      sessionId = (await post("/api/eye/start")).session_id;   // 서버가 다시 시작돼 세션이 사라졌다 — 새로 열고 한 번 더
+      r = await post("/api/eye/look", body());
+    }
     const ms = Math.round(performance.now() - startedTs), q = r.quality;
     vibrate([40, 60, 40]);
-    setDetail("점검 위치", q.where === "daytona" ? "Daytona " + q.sandbox_id.slice(0, 8) : "로컬");
+    setDetail("점검 위치", q.where === "daytona" ? "Daytona 샌드박스" : "서버 격리 프로세스");
     setDetail("점검 시간", q.check_ms + "ms");
     setDetail("밝기", String(q.luma));
     setDetail("선명도", String(q.sharpness));

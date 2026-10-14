@@ -8,6 +8,7 @@ import binascii
 import json
 import os
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Literal
@@ -15,7 +16,7 @@ from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -34,7 +35,19 @@ def reload_env() -> None:
 
 reload_env()
 
-app = FastAPI(title="소리상세 SoriDetail")
+app = FastAPI(title="소리상세 SoriDetail", docs_url=None, redoc_url=None, openapi_url=None)
+MAX_BODY_BYTES = 4_500_000   # 프레임 3MB(base64 4.2MB) + 여유. 본문을 읽기 전에 거절한다
+
+
+@app.middleware("http")
+async def reject_large_bodies(request: Request, call_next):
+    length = request.headers.get("content-length")
+    if request.method == "POST" and (length is None or not length.isdigit() or int(length) > MAX_BODY_BYTES):
+        if length is None and request.headers.get("transfer-encoding"):
+            return JSONResponse({"detail": "요청 크기를 알 수 없습니다."}, status_code=411)
+        if length is not None and (not length.isdigit() or int(length) > MAX_BODY_BYTES):
+            return JSONResponse({"detail": "요청이 너무 큽니다."}, status_code=413)
+    return await call_next(request)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 
@@ -56,7 +69,7 @@ def validate_url(url: str) -> str:
 
 def user_message(exc: Exception, fallback: str) -> str:
     """사용자에게 보여 줄 문장. 우리가 쓴 안내문만 그대로 보이고, 나머지 오류 원문(경로·외부 응답)은 숨긴다."""
-    if isinstance(exc, (UnsafeUrlError, job_box.Busy)):
+    if isinstance(exc, (UnsafeUrlError, job_box.Busy, eye_session.SessionNotFound)):
         return str(exc)
     if isinstance(exc, RuntimeError) and str(exc) in KNOWN_MESSAGES:
         return str(exc)
@@ -64,7 +77,7 @@ def user_message(exc: Exception, fallback: str) -> str:
 
 
 def http_error(exc: Exception, fallback: str) -> HTTPException:
-    status = 503 if isinstance(exc, job_box.Busy) else 502
+    status = 404 if isinstance(exc, eye_session.SessionNotFound) else 503 if isinstance(exc, job_box.Busy) else 502
     return HTTPException(status_code=status, detail=user_message(exc, fallback))
 
 
@@ -289,6 +302,18 @@ def speak_text(req: SpeakRequest, request: Request):
 @app.on_event("startup")
 def warm_up_voice():
     threading.Thread(target=voice.warm_up, daemon=True).start()
+
+
+@app.on_event("startup")
+def sweep_idle_sessions():
+    def loop() -> None:
+        while True:
+            time.sleep(60)
+            try:
+                eye_session.sweep()
+            except Exception as exc:
+                print(f"[sweep] {type(exc).__name__}: {exc}")
+    threading.Thread(target=loop, daemon=True).start()
 
 
 @app.on_event("startup")

@@ -17,7 +17,9 @@ from pathlib import Path
 from app import fetcher, job_box
 
 JOB_SOURCE = Path(__file__).resolve().parent / "sandbox_job.py"
-JOB_TIMEOUT_SECONDS = 120
+PARSE_TIMEOUT_SECONDS = 30
+TILE_TIMEOUT_SECONDS = 60
+MAX_TOTAL_IMAGE_BYTES = 60_000_000   # 상자 용량(160MB) 안에 넉넉히 들어가게
 
 _client = job_box.make_client   # eye_session 이 쓰는 이름 유지
 
@@ -71,8 +73,8 @@ def _read_tile(box, out: str, name: str) -> bytes:
     return data
 
 
-def _run(box, args: list[str], marker: str) -> str:
-    run = box.run_job(args, JOB_TIMEOUT_SECONDS)
+def _run(box, args: list[str], marker: str, timeout: int) -> str:
+    run = box.run_job(args, timeout)
     if run.exit_code != 0 or marker not in run.result:
         print(f"[sandbox_runner] 작업 실패 ({box.where}, 코드 {run.exit_code}): {run.result.strip()[-500:]}")
         raise RuntimeError(GENERIC_FAIL)   # 자식 출력(임시 경로 등)을 화면에 보내지 않는다
@@ -87,7 +89,7 @@ def collect_page(url: str):
     html = fetcher.fetch_bytes(url)
 
     yield {"type": "progress", "message": "안전한 샌드박스 컴퓨터를 준비하고 있습니다."}
-    box = job_box.open_box(network=False)
+    box = job_box.open_box()
     try:
         home = box.home
         job, out, imgs = f"{home}/job.py", f"{home}/out", f"{home}/imgs"
@@ -96,21 +98,25 @@ def collect_page(url: str):
         box.upload(html, f"{home}/page.html")
 
         yield {"type": "progress", "message": "격리된 곳에서 페이지를 해석하고 있습니다."}
-        _run(box, [job, "parse", f"{home}/page.html", url, out], "PARSE_OK")
+        _run(box, [job, "parse", f"{home}/page.html", url, out], "PARSE_OK", PARSE_TIMEOUT_SECONDS)
         page = _clean_page(_read_json(box, f"{out}/result.json"), url)
 
         yield {"type": "progress", "message": f"상세 이미지 {len(page['wanted'])}장을 내려받고 있습니다."}
-        downloaded, errors = 0, []
+        downloaded, errors, total = 0, [], 0
         for i, src in enumerate(page["wanted"]):
+            if total >= MAX_TOTAL_IMAGE_BYTES:
+                errors.append("이미지 총량 상한에 도달해 나머지는 읽지 않았습니다.")
+                break
             try:
-                data = fetcher.fetch_bytes(src, referer=url, limit=fetcher.MAX_IMAGE_BYTES)
+                data = fetcher.fetch_bytes(src, referer=url, limit=min(fetcher.MAX_IMAGE_BYTES, MAX_TOTAL_IMAGE_BYTES - total))
+                total += len(data)
                 box.upload(data, f"{imgs}/img_{i:02d}.bin")
                 downloaded += 1
             except Exception as exc:  # 이미지 1장 실패가 전체를 막지 않게 한다
                 errors.append(f"{src[:60]}: {exc}")
 
         yield {"type": "progress", "message": "격리된 곳에서 이미지를 읽기 좋게 자르고 있습니다."}
-        _run(box, [job, "tile", imgs, out], "TILE_OK")
+        _run(box, [job, "tile", imgs, out], "TILE_OK", TILE_TIMEOUT_SECONDS)
         tile_names, tile_errors = _clean_tiles(_read_json(box, f"{out}/tiles.json"))
 
         yield {

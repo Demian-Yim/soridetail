@@ -170,7 +170,6 @@ def test_start_falls_back_to_local_when_sandbox_creation_fails(monkeypatch):
     monkeypatch.setattr(job_box, "_daytona_skip_until", 0.0)
     info = eye_session.start()
     assert info["where"] == "local" and info["session_id"].startswith("local-")
-    assert "note" in info
     assert job_box.public_status() == "fallback"
     eye_session.end(info["session_id"])
     job_box.record_error(None)

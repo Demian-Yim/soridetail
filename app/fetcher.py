@@ -24,8 +24,15 @@ def to_ascii_url(url: str) -> str:
     return quote(url, safe=":/?#[]@!$&'()*+,;=%~")
 
 
+MAX_REDIRECTS = 5
+
+
+def _is_public(ip) -> bool:
+    return ip.is_global and not ip.is_multicast
+
+
 def assert_public_url(url: str) -> None:
-    """SSRF 차단 — 사용자가 넣은 주소가 내부망을 가리키면 거부한다."""
+    """SSRF 차단 — 주소가 내부망을 가리키면 거부한다. 리다이렉트마다 다시 부른다."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise UnsafeUrlError("http 또는 https 주소만 열 수 있습니다.")
@@ -34,23 +41,39 @@ def assert_public_url(url: str) -> None:
     except socket.gaierror as exc:
         raise UnsafeUrlError("주소를 찾을 수 없습니다.") from exc
     for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+        if not _is_public(ipaddress.ip_address(info[4][0])):
             raise UnsafeUrlError("내부 네트워크 주소는 열 수 없습니다.")
 
 
-def fetch_bytes(url: str, referer: str | None = None, limit: int = MAX_HTML_BYTES) -> bytes:
-    assert_public_url(url)
+def _assert_public_peer(res: httpx.Response) -> None:
+    """실제로 연결된 상대 주소도 확인한다(검사와 연결 사이에 DNS 가 바뀌는 공격 대비)."""
+    stream = res.extensions.get("network_stream")
+    peer = stream.get_extra_info("server_addr") if stream is not None else None
+    if peer and not _is_public(ipaddress.ip_address(peer[0])):
+        raise UnsafeUrlError("내부 네트워크 주소는 열 수 없습니다.")
+
+
+def fetch_bytes(url: str, referer: str | None = None, limit: int = MAX_HTML_BYTES,
+                transport: httpx.BaseTransport | None = None) -> bytes:
     headers = {"User-Agent": UA, "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8"}
     if referer:
         headers["Referer"] = to_ascii_url(referer)
-    with httpx.stream("GET", to_ascii_url(url), headers=headers, timeout=TIMEOUT,
-                      follow_redirects=True) as res:
-        res.raise_for_status()
-        chunks, total = [], 0
-        for chunk in res.iter_bytes():
-            chunks.append(chunk)
-            total += len(chunk)
-            if total >= limit:
-                break
-        return b"".join(chunks)[:limit]
+    with httpx.Client(timeout=TIMEOUT, follow_redirects=False, transport=transport) as client:
+        current = to_ascii_url(url)
+        for _hop in range(MAX_REDIRECTS + 1):
+            assert_public_url(current)
+            with client.stream("GET", current, headers=headers) as res:
+                _assert_public_peer(res)
+                if res.is_redirect:
+                    location = res.headers.get("location", "")
+                    current = to_ascii_url(str(res.url.join(location)))
+                    continue
+                res.raise_for_status()
+                chunks, total = [], 0
+                for chunk in res.iter_bytes():
+                    chunks.append(chunk)
+                    total += len(chunk)
+                    if total >= limit:
+                        break
+                return b"".join(chunks)[:limit]
+    raise UnsafeUrlError("리다이렉트가 너무 많습니다.")

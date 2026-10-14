@@ -57,8 +57,20 @@ def client_ip(request: Request) -> str:
         if not _hops_logged:   # 배포 환경의 헤더 모양을 한 번만 기록한다(주소 자체는 남기지 않는다)
             _hops_logged = True
             print(f"[limits] x-forwarded-for hops={len(hops)} last_private={_is_private(hops[-1])}")
-        return hops[-1][:64]
-    return request.client.host if request.client else "unknown"
+        return _bucket(hops[-1][:64])
+    return _bucket(request.client.host) if request.client else "unknown"
+
+
+def _bucket(value: str) -> str:
+    """IPv6 는 한 사람이 /64 안에서 주소를 바꿔 가며 상한을 피할 수 있어 /64 단위로 센다."""
+    import ipaddress
+    try:
+        ip = ipaddress.ip_address(value)
+    except ValueError:
+        return value
+    if ip.version == 6:
+        return str(ipaddress.ip_network(f"{ip}/64", strict=False))
+    return str(ip)
 
 
 def _daily_count(key: tuple[str, str], now: float) -> list:
@@ -88,6 +100,19 @@ def check(name: str, request: Request, now: float | None = None) -> None:
         recent.append(now)
         mine[1] += 1
         everyone[1] += 1
+        if len(_daily) > MAX_KEYS:
+            _evict(now)
+
+
+MAX_KEYS = 20_000
+
+
+def _evict(now: float) -> None:
+    """하루 지난 기록·빈 기록을 버린다(주소가 계속 바뀌어도 메모리가 늘지 않게)."""
+    for key in [k for k, (since, _n) in _daily.items() if now - since >= DAY and k[1] != "*"]:
+        del _daily[key]
+    for key in [k for k, q in _recent.items() if not q or now - q[-1] >= MINUTE]:
+        del _recent[key]
 
 
 def reset() -> None:

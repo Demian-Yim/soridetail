@@ -88,8 +88,22 @@ def test_camera_frames_are_never_decoded_in_the_server_process(monkeypatch):
         raise AssertionError("서버 본체에서 프레임을 디코딩했다")
 
     monkeypatch.setattr(frame_job, "analyze", forbidden)
-    result = eye_session.check_frame("attacker-chosen-id", _jpeg(128))
-    assert result["where"] == "local" and result["usable"] is True and result["sandbox_id"] == ""
+    monkeypatch.delenv("DAYTONA_API_KEY", raising=False)
+    info = eye_session.start()
+    try:
+        result = eye_session.check_frame(info["session_id"], _jpeg(128))
+        assert result["where"] == "local" and result["usable"] is True
+    finally:
+        eye_session.end(info["session_id"])
+
+
+def test_unknown_session_id_is_refused():
+    import pytest
+
+    from app import eye_session
+
+    with pytest.raises(eye_session.SessionNotFound):
+        eye_session.check_frame("attacker-chosen-id", _jpeg(128))
 
 
 def test_local_session_keeps_previous_frame_in_memory_only(monkeypatch):
@@ -133,3 +147,62 @@ def test_client_ip_uses_the_hop_cloud_run_appends():
 
     request = SimpleNamespace(headers={"x-forwarded-for": "1.2.3.4, 203.0.113.9"}, client=None)
     assert limits.client_ip(request) == "203.0.113.9"
+    v6 = SimpleNamespace(headers={"x-forwarded-for": "2001:db8:1:2:aaaa::1"}, client=None)
+    assert limits.client_ip(v6) == "2001:db8:1:2::/64"
+
+
+def test_local_box_fails_fast_when_all_slots_are_busy(monkeypatch):
+    import pytest
+
+    monkeypatch.setattr(job_box, "SLOT_WAIT_SECONDS", 0.1)
+    held = [job_box._slots.acquire(timeout=1) for _ in range(job_box.LOCAL_SLOTS)]
+    box = job_box.LocalBox()
+    try:
+        with pytest.raises(job_box.Busy):
+            box.run_job([f"{box.home}/none.py"], 5)
+    finally:
+        for ok in held:
+            if ok:
+                job_box._slots.release()
+        box.close()
+
+
+def test_job_output_replaced_by_link_or_fifo_is_not_followed(tmp_path):
+    import os
+
+    import pytest
+
+    private_file = tmp_path / "private.txt"
+    private_file.write_text("PRIVATE")
+    link = tmp_path / "out_link"
+    try:
+        os.symlink(private_file, link)
+    except (OSError, NotImplementedError):
+        pytest.skip("이 환경은 심볼릭 링크를 만들 수 없다")
+    with pytest.raises(OSError):
+        job_box._safe_read(link, 100, None)
+    if hasattr(os, "mkfifo"):
+        fifo = tmp_path / "out_fifo"
+        os.mkfifo(fifo)
+        with pytest.raises(ValueError):
+            job_box._safe_read(fifo, 100, None)
+
+
+def test_redirect_to_internal_address_is_refused(monkeypatch):
+    import socket
+
+    import httpx
+    import pytest
+
+    real = socket.getaddrinfo
+
+    def fake_getaddrinfo(host, *args, **kwargs):
+        if host == "shop.example.com":
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+        return real(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(302, headers={"location": "http://127.0.0.1/admin"}))
+    with pytest.raises(fetcher.UnsafeUrlError):
+        fetcher.fetch_bytes("https://shop.example.com/p/1", transport=transport)

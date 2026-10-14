@@ -17,9 +17,10 @@ RUN python -c "from supertonic import TTS; TTS(model='supertonic-3', auto_downlo
 
 COPY app ./app
 
-# Untrusted page/image parsing falls back to a local subprocess when the remote sandbox is unavailable.
-# That subprocess runs as this unprivileged user so it cannot read the server's environment.
-RUN useradd --system --no-create-home --shell /usr/sbin/nologin sorijob
+# When the remote sandbox is unavailable, untrusted parsing runs in sealed local boxes (app/job_box.py):
+# each box is a size-capped tmpfs mounted under /srv/boxes; the child gets new net/mount/pid namespaces,
+# a read-only root, tiny private /tmp, and a throwaway uid with no capabilities.
+RUN mkdir -p /srv/boxes && chmod 0711 /srv/boxes
 
 # Secrets are NOT in the image. Pass DAYTONA_API_KEY and GEMINI_API_KEY at run time.
 ENV PORT=8080

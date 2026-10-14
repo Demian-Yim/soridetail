@@ -3,14 +3,16 @@
 남의 HTML·이미지·카메라 프레임을 디코딩하는 일은 서버 본체에서 절대 하지 않는다.
 Daytona 샌드박스를 못 만들면(키 만료·장애) 같은 스크립트를 서버 안 격리 프로세스로 돌린다.
 
-대체 상자(리눅스 = Cloud Run, 서버가 root 로 돌 때)
-  - 상자마다 처음 쓰는 uid 로 실행한다 → 서버 환경변수(/proc/<pid>/environ)도, 다른 요청의 상자도 못 읽는다.
-  - 네트워크 네임스페이스를 끊는다. 끊을 수 없으면 대체 상자를 열지 않는다(fail-closed).
-  - 환경변수 전부 제거, 메모리·CPU·파일 크기·프로세스 수 상한, 출력은 파일로만, 작업 폴더 용량을 실행 중 감시.
-  - 작업이 끝나면 그 uid 의 프로세스를 전부 죽이고, 그 uid 가 /tmp 등에 남긴 파일까지 지운다.
-  - 서버는 자식이 죽은 뒤에만 결과 파일을 읽는다. 일반 파일만, 상자 안 경로만, 정해진 크기까지만.
-윈도우 개발 PC 에서는 별도 uid·네임스페이스가 없어 'process-only' 로만 돈다(운영 대상 아님).
-새 키가 들어오면 다음 요청부터 자동으로 Daytona 로 돌아간다.
+대체 상자 — 'sealed' 방식(리눅스·root, Cloud Run 기준)
+  - 상자마다 용량 제한 메모리 디스크(tmpfs)를 새로 붙인다. 자식이 쓸 수 있는 곳은 여기와 작은 /tmp 뿐이다.
+  - 자식은 새 네트워크·마운트·프로세스 네임스페이스 안에서 돈다: 인터넷 없음, 루트 파일시스템 읽기 전용,
+    /tmp·/var/tmp·/dev/shm 은 상자 전용 작은 tmpfs, /proc 에는 자기 프로세스만 보인다.
+  - 그 안에서 상자마다 처음 쓰는 uid 로 내려가고(권한·능력 전부 제거), 우선순위를 낮춘다.
+  - 작업이 끝나면 프로세스 네임스페이스째 죽이고, 서버는 그다음에만 결과를 읽는다.
+    일반 파일만, 상자 안·그 uid 소유·링크 없는 경로만, 정해진 크기까지만.
+  - 끝나면 상자 tmpfs 를 떼어 내므로 남는 것이 없다.
+sealed 를 못 쓰면 'netns-setpriv'(네트워크 차단 + uid)로 내려가고, 그것도 안 되면 대체 상자를 열지 않는다.
+윈도우 개발 PC 에서는 'process-only' 로만 돈다(운영 대상 아님).
 """
 import os
 import secrets
@@ -28,34 +30,51 @@ from pathlib import Path
 
 from daytona import CreateSandboxFromSnapshotParams, Daytona, DaytonaConfig
 
-LOCAL_TIMEOUT_SECONDS = 120
-LOCAL_MEMORY_BYTES = 700_000_000
-LOCAL_CPU_SECONDS = 90
-LOCAL_FILE_BYTES = 30_000_000
+BOX_BASE = "/srv/boxes"                 # Dockerfile 이 만든다(리눅스)
+BOX_TMPFS_SIZE = "160m"                 # 상자 하나가 쓸 수 있는 최대 용량(입력 포함)
+LOCAL_MEMORY_BYTES = 512_000_000
+LOCAL_CPU_SECONDS = 60
+LOCAL_FILE_BYTES = 8_000_000            # 자식이 만드는 파일 1개 상한(타일·결과·프레임 사본)
 LOCAL_NPROC = 4
-LOCAL_DIR_BYTES = 150_000_000       # Cloud Run 의 /tmp 는 메모리다
+LOCAL_DIR_BYTES = 160_000_000           # sealed 가 아닐 때만 쓰는 감시 상한
+LOCAL_DIR_ENTRIES = 2_000
 OUTPUT_READ_BYTES = 64_000
-SLOT_WAIT_SECONDS = 30
+LOCAL_SLOTS = 2
+SLOT_WAIT_SECONDS = 3
 DAYTONA_COOLDOWN_SECONDS = 60
 ERROR_TTL_SECONDS = 300
+PROBE_RETRY_SECONDS = 300
 UID_RANGE = (20000, 60000)
 SHARED_TMP_DIRS = ("/tmp", "/var/tmp", "/dev/shm")
 # Daytona 쪽 안전망: 우리가 지우지 못해도(재시작·삭제 실패) 15분 쉬면 멈추고, 멈추면 바로 지워진다. [미검증: 키 만료로 실측 못 함]
 DAYTONA_BACKSTOP = {"auto_stop_interval": 15, "auto_delete_interval": 0}
 
 LAUNCHER = (
-    "import sys\n"
+    "import os, sys\n"
     "try:\n"
     " import resource as r\n"
     " for k, v in ((r.RLIMIT_AS, %d), (r.RLIMIT_CPU, %d), (r.RLIMIT_FSIZE, %d),"
     " (r.RLIMIT_NPROC, %d), (r.RLIMIT_NOFILE, 64), (r.RLIMIT_CORE, 0)):\n"
     "  r.setrlimit(k, (v, v))\n"
-    "except ImportError:\n"
+    " os.nice(10)\n"
+    "except (ImportError, AttributeError):\n"
     " pass\n"
     "import runpy\n"
     "sys.argv = sys.argv[1:]\n"
     "runpy.run_path(sys.argv[0], run_name='__main__')\n"
 ) % (LOCAL_MEMORY_BYTES, LOCAL_CPU_SECONDS, LOCAL_FILE_BYTES, LOCAL_NPROC)
+
+# sealed: 새 마운트 네임스페이스 안에서 루트를 읽기 전용으로 바꾸고, 쓰기 가능한 임시 폴더를 작게 새로 붙인 뒤 uid 로 내려간다.
+SEAL_SCRIPT = (
+    "set -e\n"
+    "mount -o remount,bind,ro /\n"
+    "mount -t tmpfs -o size=16m,mode=1777,nosuid,nodev tmpfs /tmp\n"
+    "mount -t tmpfs -o size=4m,mode=1777,nosuid,nodev tmpfs /var/tmp\n"
+    "mount -t tmpfs -o size=4m,mode=1777,nosuid,nodev tmpfs /dev/shm\n"
+    "uid=$1; shift\n"
+    "exec setpriv --reuid=\"$uid\" --regid=\"$uid\" --clear-groups --no-new-privs "
+    "--inh-caps=-all --bounding-set=-all \"$@\"\n"
+)
 
 KILL_ALL_OF_MY_UID = "import os, signal\ntry:\n os.kill(-1, signal.SIGKILL)\nexcept ProcessLookupError:\n pass\n"
 
@@ -65,15 +84,19 @@ class LocalBoxUnavailable(RuntimeError):
 
 
 class Busy(RuntimeError):
-    """대체 상자가 다른 작업 중이다."""
+    """대체 상자가 모두 사용 중이다."""
 
 
-_slot = threading.BoundedSemaphore(1)
+class Tainted(RuntimeError):
+    """자식 프로세스를 확실히 끝내지 못했다 — 결과를 읽지 않는다."""
+
+
+_slots = threading.BoundedSemaphore(LOCAL_SLOTS)
 _state_lock = threading.Lock()
 _error: tuple[float, str] = (0.0, "")
 _daytona_skip_until = 0.0
 _live_uids: set[int] = set()
-_mode: str | None = None
+_mode: tuple[float, str | None] | None = None
 
 
 def make_client() -> Daytona:
@@ -83,9 +106,9 @@ def make_client() -> Daytona:
     return Daytona(DaytonaConfig(api_key=api_key))
 
 
-def create_sandbox(network: bool):
-    params = CreateSandboxFromSnapshotParams(network_block_all=not network, **DAYTONA_BACKSTOP)
-    return make_client().create(params)
+def create_sandbox():
+    """Daytona 샌드박스는 항상 인터넷을 막고 만든다. 해석에 필요한 pillow 는 기본 이미지에 있다."""
+    return make_client().create(CreateSandboxFromSnapshotParams(network_block_all=True, **DAYTONA_BACKSTOP))
 
 
 def record_error(exc: Exception | None) -> None:
@@ -137,20 +160,22 @@ class DaytonaBox:
         self._sandbox.fs.upload_file(data, path)
 
     def download(self, path: str, max_bytes: int) -> bytes:
+        info = self._sandbox.fs.get_file_info(path)      # 크기부터 본다 — 받은 뒤에 재면 이미 늦다
+        if getattr(info, "is_dir", False) or int(getattr(info, "size", max_bytes + 1)) > max_bytes:
+            raise ValueError("결과 파일이 올바르지 않습니다.")
         data = self._sandbox.fs.download_file(path)
         if len(data) > max_bytes:
             raise ValueError("결과 파일이 너무 큽니다.")
         return data
 
     def run_job(self, args: list[str], timeout: int) -> RunResult:
-        run = self._sandbox.process.exec("python " + " ".join(shlex.quote(a) for a in args), timeout=timeout)
-        return RunResult(run.exit_code, run.result or "")
+        inner = ("python " + " ".join(shlex.quote(a) for a in args) +
+                 f" > /tmp/.job_out 2>&1; c=$?; head -c {OUTPUT_READ_BYTES} /tmp/.job_out; exit $c")
+        run = self._sandbox.process.exec("sh -c " + shlex.quote(inner), timeout=timeout)
+        return RunResult(run.exit_code, (run.result or "")[:OUTPUT_READ_BYTES])
 
     def close(self) -> None:
-        try:
-            self._sandbox.delete()
-        except Exception as exc:  # 정리 실패가 결과·원래 오류를 가리지 않게. 남은 것은 DAYTONA_BACKSTOP 이 지운다
-            print(f"[job_box] 샌드박스 삭제 실패: {type(exc).__name__}: {exc}")
+        delete_quietly(self._sandbox)
 
 
 class LocalBox:
@@ -162,15 +187,23 @@ class LocalBox:
             raise LocalBoxUnavailable("이 서버에서는 격리 프로세스를 만들 수 없습니다.")
         self._mode = mode
         self._uid = _claim_uid() if mode != "process-only" else None
-        self._root = Path(tempfile.mkdtemp(prefix="sori_job_"))
+        self._mounted = False
         try:
-            if self._uid is not None:
-                os.chown(self._root, self._uid, self._uid)
+            if mode == "sealed":
+                self._root = Path(tempfile.mkdtemp(prefix="box_", dir=BOX_BASE))
+                subprocess.run(["mount", "-t", "tmpfs", "-o", f"size={BOX_TMPFS_SIZE},mode=0711,nosuid,nodev",
+                                "tmpfs", str(self._root)], check=True, capture_output=True, timeout=10)
+                self._mounted = True
+            else:
+                self._root = Path(tempfile.mkdtemp(prefix="sori_job_"))
+                if self._uid is not None:
+                    os.chmod(self._root, 0o711)
+            self.home = str(self._root / "sori")
+            self._make_dir(Path(self.home))
         except Exception:
             self.close()
             raise
-        self.id = "local-" + self._root.name
-        self.home = str(self._root / "sori")
+        self.id = "local-" + secrets.token_hex(6)
 
     @property
     def root(self) -> Path:
@@ -178,97 +211,121 @@ class LocalBox:
 
     def mkdirs(self, *paths: str) -> None:
         for p in paths:
-            Path(p).mkdir(parents=True, exist_ok=True)
-            self._own(Path(p))
+            self._make_dir(Path(p))
 
     def upload(self, data: bytes, path: str) -> None:
+        """root 가 자식 폴더에 쓰므로 링크를 절대 따라가지 않는다. 새 파일로만 만든다."""
         target = Path(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        self._own(target.parent)
-        target.write_bytes(data)
-        self._own(target)
+        self._check_inside(target.parent, allow_missing=True)
+        self._make_dir(target.parent)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+        fd = os.open(target, flags, 0o600)
+        try:
+            view = memoryview(data)
+            while view:
+                view = view[os.write(fd, view):]
+            if self._uid is not None:
+                os.fchown(fd, self._uid, self._uid)
+        finally:
+            os.close(fd)
 
     def download(self, path: str, max_bytes: int) -> bytes:
-        """자식이 만든 파일을 읽는다. 상자 밖·링크·FIFO·장치·과대 파일은 거부한다."""
+        """자식이 만든 파일을 읽는다. 상자 밖·링크·FIFO·장치·하드링크·남의 소유·과대 파일은 거부한다."""
         target = Path(path)
+        self._check_inside(target)
+        return _safe_read(target, max_bytes, self._uid)
+
+    def run_job(self, args: list[str], timeout: int) -> RunResult:
+        if not _slots.acquire(timeout=SLOT_WAIT_SECONDS):
+            raise Busy("지금 요청이 많습니다. 잠시 뒤 다시 시도해 주세요.")
+        try:
+            return self._run(args, timeout)
+        finally:
+            _slots.release()
+
+    def _run(self, args: list[str], timeout: int) -> RunResult:
+        out_path = self._root / ".job_output"        # 자식이 쓸 수 없는 root 소유 폴더에 둔다(바꿔치기 불가)
+        cmd, kwargs = _command(self._mode, self._uid, [sys.executable, "-I", "-c", LAUNCHER, *args])
+        deadline, code, reason = time.time() + timeout, None, ""
+        fd = os.open(out_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        try:
+            proc = subprocess.Popen(cmd, cwd=self.home, env=_clean_env(), stdin=subprocess.DEVNULL,
+                                    stdout=fd, stderr=subprocess.STDOUT, start_new_session=True, **kwargs)
+        finally:
+            os.close(fd)
+        try:
+            while code is None:
+                try:
+                    code = proc.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    if time.time() > deadline:
+                        reason, code = "시간 초과", 124
+                    elif self._mode != "sealed" and _over_budget(self._root):
+                        reason, code = "작업 폴더 용량 초과", 125
+        finally:
+            _kill_group(proc)
+            self._kill_uid(strict=True)       # 확실히 끝났을 때만 결과를 읽는다
+        if reason:
+            return RunResult(code, "JOB_FAIL " + reason)
+        return RunResult(code, _safe_read(out_path, OUTPUT_READ_BYTES, None, truncate=True).decode("utf-8", "replace"))
+
+    def close(self) -> None:
+        try:
+            self._kill_uid(strict=False)
+        finally:
+            root = getattr(self, "_root", None)
+            if root is not None:
+                if self._mounted:
+                    subprocess.run(["umount", "-l", str(root)], capture_output=True, timeout=10)
+                shutil.rmtree(root, ignore_errors=True)
+                if root.exists():
+                    print(f"[job_box] 임시 폴더를 다 지우지 못함: {root}")
+            if self._uid is not None:
+                if self._mode != "sealed":
+                    _remove_owned_by(self._uid)   # sealed 는 자식의 /tmp 가 따로라 남는 것이 없다
+                with _state_lock:
+                    _live_uids.discard(self._uid)
+
+    def _make_dir(self, path: Path) -> None:
+        self._check_inside(path, allow_missing=True)
+        if not path.exists():
+            path.mkdir(mode=0o700)
+            if self._uid is not None:
+                os.chown(path, self._uid, self._uid, follow_symlinks=False)
+
+    def _check_inside(self, target: Path, allow_missing: bool = False) -> None:
         current = self._root
         for part in target.relative_to(self._root).parts:   # 상자 밖 경로면 여기서 ValueError
             current = current / part
             if current.is_symlink():
-                raise ValueError("결과 파일 경로가 올바르지 않습니다.")
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
-        fd = os.open(target, flags)
-        try:
-            if not stat.S_ISREG(os.fstat(fd).st_mode):
-                raise ValueError("결과 파일이 일반 파일이 아닙니다.")
-            with os.fdopen(fd, "rb", closefd=False) as f:
-                data = f.read(max_bytes + 1)
-        finally:
-            os.close(fd)
-        if len(data) > max_bytes:
-            raise ValueError("결과 파일이 너무 큽니다.")
-        return data
+                raise ValueError("상자 안 경로가 올바르지 않습니다.")
+            if not current.exists() and not allow_missing:
+                raise ValueError("결과 파일이 없습니다.")
 
-    def run_job(self, args: list[str], timeout: int) -> RunResult:
-        if not _slot.acquire(timeout=SLOT_WAIT_SECONDS):
-            raise Busy("잠시 뒤 다시 시도해 주세요.")
-        try:
-            return self._run(args, min(timeout, LOCAL_TIMEOUT_SECONDS))
-        finally:
-            _slot.release()
-
-    def _run(self, args: list[str], timeout: int) -> RunResult:
-        out_path = self._root / ".job_output"
-        cmd, kwargs = _command(self._mode, self._uid, [sys.executable, "-I", "-c", LAUNCHER, *args])
-        deadline, code, reason = time.time() + timeout, None, ""
-        with open(out_path, "wb") as out:
-            proc = subprocess.Popen(cmd, cwd=self._root, env=_clean_env(), stdin=subprocess.DEVNULL,
-                                    stdout=out, stderr=subprocess.STDOUT, start_new_session=True, **kwargs)
-            try:
-                while code is None:
-                    try:
-                        code = proc.wait(timeout=0.5)
-                    except subprocess.TimeoutExpired:
-                        if time.time() > deadline:
-                            reason, code = "시간 초과", 124
-                        elif _dir_size(self._root) > LOCAL_DIR_BYTES:
-                            reason, code = "작업 폴더 용량 초과", 125
-            finally:
-                _kill_group(proc)
-                self._kill_uid()          # 백그라운드로 빠져나간 자식까지
-        if reason:
-            return RunResult(code, "JOB_FAIL " + reason)
-        return RunResult(code, _read_head(out_path))
-
-    def close(self) -> None:
-        self._kill_uid()
-        shutil.rmtree(self._root, ignore_errors=True)
-        if self._root.exists():
-            print(f"[job_box] 임시 폴더를 다 지우지 못함: {self._root}")
-        if self._uid is not None:
-            _remove_owned_by(self._uid)
-            with _state_lock:
-                _live_uids.discard(self._uid)
-
-    def _own(self, path: Path) -> None:
-        if self._uid is not None:
-            os.chown(path, self._uid, self._uid)
-
-    def _kill_uid(self) -> None:
+    def _kill_uid(self, strict: bool) -> None:
         if self._uid is None:
             return
         try:
             subprocess.run([sys.executable, "-I", "-c", KILL_ALL_OF_MY_UID], env=_clean_env(), timeout=10,
-                           user=self._uid, group=self._uid, extra_groups=[], capture_output=True)
+                           user=self._uid, group=self._uid, extra_groups=[], capture_output=True, check=False)
         except (OSError, subprocess.SubprocessError) as exc:
             print(f"[job_box] uid {self._uid} 프로세스 정리 실패: {exc}")
+            if strict:
+                raise Tainted("작업을 안전하게 끝내지 못했습니다.") from exc
 
 
-def open_box(network: bool = False):
+def delete_quietly(sandbox) -> None:
+    try:
+        sandbox.delete()
+    except Exception as exc:  # 정리 실패가 결과·원래 오류를 가리지 않게. 남은 것은 DAYTONA_BACKSTOP 이 지운다
+        print(f"[job_box] 샌드박스 삭제 실패: {type(exc).__name__}: {exc}")
+
+
+def open_box():
     """Daytona 샌드박스를 먼저 시도하고, 못 만들면(또는 최근 실패 직후면) 격리 프로세스 상자를 연다."""
     if daytona_allowed():
         try:
-            box = DaytonaBox(create_sandbox(network))
+            box = DaytonaBox(create_sandbox())
             record_error(None)
             return box
         except Exception as exc:
@@ -278,11 +335,11 @@ def open_box(network: bool = False):
 
 
 def isolation_mode() -> str | None:
-    """대체 상자 격리 방식. None 이면 열지 않는다. 처음 한 번 확인해 기억한다."""
+    """대체 상자 격리 방식. None 이면 열지 않는다. 실패는 잠시 뒤 다시 확인한다."""
     global _mode
-    if _mode is None:
-        _mode = _probe_mode() or ""
-    return _mode or None
+    if _mode is None or (_mode[1] is None and time.time() - _mode[0] > PROBE_RETRY_SECONDS):
+        _mode = (time.time(), _probe_mode())
+    return _mode[1]
 
 
 def _probe_mode() -> str | None:
@@ -290,38 +347,62 @@ def _probe_mode() -> str | None:
         return "process-only"                     # 윈도우 개발 PC
     if os.geteuid() != 0:
         return "process-only" if os.getenv("ALLOW_UNSAFE_LOCAL") == "1" else None
-    uid = UID_RANGE[0] - 1
-    for mode in ("netns-setpriv", "netns-userns"):
-        cmd, kwargs = _command(mode, uid, ["true"])
-        try:
-            if subprocess.run(cmd, env=_clean_env(), capture_output=True, timeout=10, **kwargs).returncode == 0:
-                return mode
-        except (OSError, subprocess.SubprocessError):
-            continue
+    if _probe_sealed():
+        return "sealed"
+    cmd, kwargs = _command("netns-setpriv", UID_RANGE[0] - 1, ["true"])
+    try:
+        if subprocess.run(cmd, env=_clean_env(), capture_output=True, timeout=10, **kwargs).returncode == 0:
+            return "netns-setpriv"
+    except (OSError, subprocess.SubprocessError):
+        pass
     return None
 
 
+def _probe_sealed() -> bool:
+    if not os.path.isdir(BOX_BASE):
+        return False
+    probe = Path(tempfile.mkdtemp(prefix="probe_", dir=BOX_BASE))
+    mounted = False
+    try:
+        mounted = subprocess.run(["mount", "-t", "tmpfs", "-o", "size=1m,mode=0711", "tmpfs", str(probe)],
+                                 capture_output=True, timeout=10).returncode == 0
+        if not mounted:
+            return False
+        cmd, kwargs = _command("sealed", UID_RANGE[0] - 1, ["true"])
+        return subprocess.run(cmd, env=_clean_env(), capture_output=True, timeout=10, **kwargs).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+    finally:
+        if mounted:
+            subprocess.run(["umount", "-l", str(probe)], capture_output=True, timeout=10)
+        shutil.rmtree(probe, ignore_errors=True)
+
+
 def _command(mode: str, uid: int | None, argv: list[str]) -> tuple[list[str], dict]:
-    if mode == "netns-setpriv":    # root 가 네트워크를 끊고, 그다음 uid 로 내려간다 — 자식은 어떤 권한도 없다
+    if mode == "sealed":
+        return ["unshare", "-n", "-m", "-p", "--fork", "--mount-proc", "--propagation", "private",
+                "sh", "-c", SEAL_SCRIPT, "seal", str(uid), *argv], {}
+    if mode == "netns-setpriv":
         return ["unshare", "-n", "setpriv", f"--reuid={uid}", f"--regid={uid}", "--clear-groups",
-                "--no-new-privs", *argv], {}
-    if mode == "netns-userns":     # 먼저 uid 로 내려간 뒤, 사용자 네임스페이스로 네트워크를 끊는다
-        return ["unshare", "-rn", *argv], {"user": uid, "group": uid, "extra_groups": []}
+                "--no-new-privs", "--inh-caps=-all", "--bounding-set=-all", *argv], {}
     return argv, {}
 
 
 def self_check() -> str:
-    """대체 상자 안에서 서버 환경변수 읽기·메타데이터 서버 접속이 실제로 막히는지 확인한다. 결과는 로그로."""
+    """대체 상자 안에서 막혀야 할 것이 실제로 막히는지 확인한다. 결과는 로그로만."""
     if not sys.platform.startswith("linux"):
         return "skipped"
     script = (
         "import os, socket\n"
-        "try:\n    open('/proc/%d/environ' % os.getppid(), 'rb').read(1); proc = 'OPEN'\n"
-        "except Exception:\n    proc = 'blocked'\n"
-        "s = socket.socket(); s.settimeout(2)\n"
-        "try:\n    s.connect(('169.254.169.254', 80)); net = 'OPEN'\n"
-        "except Exception:\n    net = 'blocked'\n"
-        "print('CHECK proc=%s net=%s' % (proc, net))\n"
+        "def tried(f):\n"
+        "    try:\n        f(); return 'OPEN'\n"
+        "    except Exception:\n        return 'blocked'\n"
+        "def net():\n    s = socket.socket(); s.settimeout(2); s.connect(('169.254.169.254', 80))\n"
+        "def root_write():\n    open('/srv/app_write_probe', 'w').write('x')\n"
+        "def big_tmp():\n    open('/tmp/fill', 'wb').write(b'0' * 40_000_000)\n"
+        "print('CHECK proc=%s net=%s rootfs=%s tmp40m=%s' % (\n"
+        "    tried(lambda: open('/proc/%d/environ' % os.getppid(), 'rb').read(1)), tried(net),\n"
+        "    tried(root_write), tried(big_tmp)))\n"
     )
     try:
         box = LocalBox()
@@ -330,9 +411,29 @@ def self_check() -> str:
     try:
         box.upload(script.encode(), f"{box.home}/check.py")
         out = box.run_job([f"{box.home}/check.py"], 20).result
-        return out.split("CHECK ", 1)[1].strip()[:60] if "CHECK " in out else "failed"
+        return out.split("CHECK ", 1)[1].strip()[:90] if "CHECK " in out else "failed"
     finally:
         box.close()
+
+
+def _safe_read(path: Path, max_bytes: int, owner: int | None, truncate: bool = False) -> bytes:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+    fd = os.open(path, flags)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError("결과 파일이 일반 파일이 아닙니다.")
+        if owner is not None and (info.st_uid != owner or info.st_nlink != 1):
+            raise ValueError("결과 파일의 주인이 올바르지 않습니다.")
+        with os.fdopen(fd, "rb", closefd=False) as f:
+            data = f.read(max_bytes + 1)
+    finally:
+        os.close(fd)
+    if len(data) > max_bytes:
+        if truncate:
+            return data[:max_bytes]
+        raise ValueError("결과 파일이 너무 큽니다.")
+    return data
 
 
 def _claim_uid() -> int:
@@ -355,7 +456,7 @@ def _clean_env() -> dict:
 def _kill_group(proc: subprocess.Popen) -> None:
     try:
         if hasattr(os, "killpg"):
-            os.killpg(proc.pid, signal.SIGKILL)
+            os.killpg(proc.pid, signal.SIGKILL)   # sealed 는 이것으로 프로세스 네임스페이스 전체가 끝난다
         elif proc.poll() is None:
             proc.kill()
     except (ProcessLookupError, PermissionError):
@@ -367,7 +468,6 @@ def _kill_group(proc: subprocess.Popen) -> None:
 
 
 def _remove_owned_by(uid: int) -> None:
-    """자식이 상자 밖 공용 임시 폴더에 남긴 파일을 지운다(메모리를 계속 붙잡지 않게)."""
     for top in SHARED_TMP_DIRS:
         try:
             entries = list(os.scandir(top))
@@ -385,20 +485,15 @@ def _remove_owned_by(uid: int) -> None:
                 pass
 
 
-def _read_head(path: Path) -> str:
-    try:
-        with open(path, "rb") as f:
-            return f.read(OUTPUT_READ_BYTES).decode("utf-8", errors="replace")
-    except OSError:
-        return ""
-
-
-def _dir_size(root: Path) -> int:
-    total = 0
-    for dirpath, _dirs, files in os.walk(root):
+def _over_budget(root: Path) -> bool:
+    total, count = 0, 0
+    for dirpath, dirs, files in os.walk(root):
+        count += len(dirs) + len(files)
+        if count > LOCAL_DIR_ENTRIES:
+            return True
         for name in files:
             try:
                 total += os.lstat(os.path.join(dirpath, name)).st_size
             except OSError:
                 pass
-    return total
+    return total > LOCAL_DIR_BYTES
